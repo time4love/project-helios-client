@@ -113,3 +113,34 @@ export async function getMeasurements(
   })
   return response.data
 }
+
+export interface StatsResult {
+  count: number
+  avg_delta_azimuth: number | null
+  avg_delta_altitude: number | null
+  std_dev_azimuth: number | null
+  std_dev_altitude: number | null
+}
+
+/**
+ * Get aggregated statistics for measurements on a given date.
+ * @param date - Optional date string in YYYY-MM-DD format (defaults to today)
+ */
+export async function getStats(date?: string): Promise<StatsResult> {
+  const response = await api.get<StatsResult>('/api/v1/solar/stats', {
+    params: { target_date: date },
+  })
+  return response.data
+}
+
+/**
+ * Trigger a browser download of measurements as CSV.
+ * @param date - Optional date string in YYYY-MM-DD format (defaults to today)
+ */
+export function downloadCSV(date?: string): void {
+  const baseUrl = import.meta.env.VITE_API_URL
+  const params = new URLSearchParams()
+  if (date) params.set('target_date', date)
+  const url = `${baseUrl}/api/v1/solar/export${params.toString() ? '?' + params.toString() : ''}`
+  window.open(url, '_blank')
+}

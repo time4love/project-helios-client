@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
-import MarkerClusterGroup from 'react-leaflet-cluster'
 import { Icon } from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { getMeasurements, type MeasurementResult } from '@/services/api'
@@ -134,58 +133,57 @@ export function GlobalMap() {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        <MarkerClusterGroup chunkedLoading>
-          {measurements.map((measurement) => {
-            const totalDelta = calculateTotalDelta(measurement)
-            const isAccurate = totalDelta < 10
+        {/* Render markers directly without clustering */}
+        {measurements.map((measurement) => {
+          const totalDelta = calculateTotalDelta(measurement)
+          const isAccurate = totalDelta < 10
 
-            return (
-              <Marker
-                key={measurement.id}
-                position={[measurement.latitude, measurement.longitude]}
-                icon={markerIcon}
-              >
-                <Popup>
-                  <div className="min-w-[180px] text-sm">
-                    <div className="font-semibold border-b pb-1 mb-2">
-                      Measurement #{measurement.id}
+          return (
+            <Marker
+              key={measurement.id}
+              position={[measurement.latitude, measurement.longitude]}
+              icon={markerIcon}
+            >
+              <Popup>
+                <div className="min-w-[180px] text-sm">
+                  <div className="font-semibold border-b pb-1 mb-2">
+                    Measurement #{measurement.id}
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">User:</span>
+                      <span className="font-mono">
+                        {shortenDeviceId(measurement.device_id)}
+                      </span>
                     </div>
 
-                    <div className="space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">User:</span>
-                        <span className="font-mono">
-                          {shortenDeviceId(measurement.device_id)}
-                        </span>
-                      </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Time:</span>
+                      <span>{formatTime(measurement.created_at)}</span>
+                    </div>
 
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Time:</span>
-                        <span>{formatTime(measurement.created_at)}</span>
-                      </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Delta:</span>
+                      <span
+                        className={`font-bold ${
+                          isAccurate ? 'text-green-600' : 'text-red-600'
+                        }`}
+                      >
+                        {totalDelta.toFixed(2)}°
+                      </span>
+                    </div>
 
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Delta:</span>
-                        <span
-                          className={`font-bold ${
-                            isAccurate ? 'text-green-600' : 'text-red-600'
-                          }`}
-                        >
-                          {totalDelta.toFixed(2)}°
-                        </span>
-                      </div>
-
-                      <div className="text-xs text-gray-500 pt-1 border-t mt-2">
-                        <div>Az: {measurement.delta_azimuth.toFixed(2)}°</div>
-                        <div>Alt: {measurement.delta_altitude.toFixed(2)}°</div>
-                      </div>
+                    <div className="text-xs text-gray-500 pt-1 border-t mt-2">
+                      <div>Az: {measurement.delta_azimuth.toFixed(2)}°</div>
+                      <div>Alt: {measurement.delta_altitude.toFixed(2)}°</div>
                     </div>
                   </div>
-                </Popup>
-              </Marker>
-            )
-          })}
-        </MarkerClusterGroup>
+                </div>
+              </Popup>
+            </Marker>
+          )
+        })}
       </MapContainer>
     </div>
   )

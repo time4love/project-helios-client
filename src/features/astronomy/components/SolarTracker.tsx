@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Camera, MapPin, Compass, AlertCircle, X } from 'lucide-react'
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
 import { fetchSunPosition } from '@/services/api'
+import { normalizeOrientation } from '@/utils/sensorMath'
 
 interface Snapshot {
   sensor: { azimuth: number; altitude: number }
@@ -14,6 +15,7 @@ interface Snapshot {
 /**
  * Manual capture solar tracker - compares device orientation with calculated sun position.
  * Features a camera-shutter style capture button for taking measurements.
+ * Uses normalized sensor values converted to astronomical coordinates.
  */
 export function SolarTracker() {
   const { data: sensorData, permissionGranted, requestAccess, error: sensorError } = useDeviceOrientation()
@@ -22,10 +24,16 @@ export function SolarTracker() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const isReady = permissionGranted && coordinates && sensorData
+  // Normalize raw sensor data to astronomical coordinates
+  const normalizedSensor = useMemo(() => {
+    if (!sensorData) return null
+    return normalizeOrientation(sensorData.alpha, sensorData.beta, sensorData.gamma)
+  }, [sensorData])
+
+  const isReady = permissionGranted && coordinates && normalizedSensor
 
   const handleMeasure = async () => {
-    if (!coordinates || !sensorData) {
+    if (!coordinates || !normalizedSensor) {
       setError('GPS and sensors must be ready before capturing')
       return
     }
@@ -33,10 +41,10 @@ export function SolarTracker() {
     setIsCapturing(true)
     setError(null)
 
-    // Freeze current sensor values at moment of capture
+    // Freeze current normalized sensor values at moment of capture
     const capturedSensor = {
-      azimuth: sensorData.alpha,
-      altitude: sensorData.beta,
+      azimuth: normalizedSensor.azimuth,
+      altitude: normalizedSensor.altitude,
     }
 
     try {
@@ -133,16 +141,17 @@ export function SolarTracker() {
             <div>
               <p className="text-slate-500 text-sm mb-1">AZIMUTH</p>
               <p className="text-5xl font-mono font-bold text-white">
-                {sensorData ? formatValue(sensorData.alpha) : '—'}
+                {normalizedSensor ? formatValue(normalizedSensor.azimuth) : '—'}
               </p>
             </div>
             <div>
               <p className="text-slate-500 text-sm mb-1">ALTITUDE</p>
               <p className="text-5xl font-mono font-bold text-white">
-                {sensorData ? formatValue(sensorData.beta) : '—'}
+                {normalizedSensor ? formatValue(normalizedSensor.altitude) : '—'}
               </p>
             </div>
           </div>
+          <p className="text-slate-600 text-xs mt-3">(Assumes Portrait Mode)</p>
         </div>
 
         {/* Capture Button */}

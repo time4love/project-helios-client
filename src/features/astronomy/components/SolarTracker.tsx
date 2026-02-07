@@ -3,7 +3,7 @@ import { Camera, MapPin, Compass, AlertCircle, X, ChevronUp, ChevronDown, Chevro
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
 import { fetchSunPosition, type SunPosition } from '@/services/api'
-import { normalizeOrientation } from '@/utils/sensorMath'
+import { normalizeOrientation, getShortestAngle } from '@/utils/sensorMath'
 
 interface Snapshot {
   sensor: { azimuth: number; altitude: number }
@@ -22,15 +22,65 @@ interface GuidanceState {
   azimuthLocked: boolean
   altitudeLocked: boolean
   fullyLocked: boolean
+  isCoarse: boolean // >15° - show arrows
+  isFine: boolean // <15° - hide arrows, visual align
+  canCapture: boolean // <20° - enable capture button
 }
 
-const LOCK_THRESHOLD = 5 // degrees
+const LOCK_THRESHOLD = 5 // degrees - fully locked
+const FINE_THRESHOLD = 15 // degrees - switch to fine guidance
+const CAPTURE_THRESHOLD = 20 // degrees - enable capture button
+
+/**
+ * Professional crosshair reticle - thin white lines with gap in center
+ */
+function CrosshairReticle({ color }: { color: string }) {
+  return (
+    <svg viewBox="0 0 100 100" className="w-20 h-20">
+      {/* Horizontal lines with gap */}
+      <line x1="0" y1="50" x2="35" y2="50" stroke={color} strokeWidth="1.5" />
+      <line x1="65" y1="50" x2="100" y2="50" stroke={color} strokeWidth="1.5" />
+      {/* Vertical lines with gap */}
+      <line x1="50" y1="0" x2="50" y2="35" stroke={color} strokeWidth="1.5" />
+      <line x1="50" y1="65" x2="50" y2="100" stroke={color} strokeWidth="1.5" />
+      {/* Center dot */}
+      <circle cx="50" cy="50" r="3" fill={color} />
+    </svg>
+  )
+}
 
 /**
  * Guidance HUD component - shows directional arrows to guide user to target
+ * Coarse mode (>15°): arrows + orange ring
+ * Fine mode (<15°): no arrows, yellow/green ring, "ALIGN VISUALLY"
  */
 function GuidanceHUD({ guidance }: { guidance: GuidanceState }) {
-  const { needsRight, needsLeft, needsUp, needsDown, azimuthLocked, altitudeLocked, fullyLocked } = guidance
+  const { needsRight, needsLeft, needsUp, needsDown, fullyLocked, isCoarse, isFine } = guidance
+
+  // Determine ring color based on state
+  const getRingColor = () => {
+    if (fullyLocked) return 'border-green-400 shadow-green-500/40'
+    if (isFine) return 'border-yellow-400 shadow-yellow-500/30'
+    return 'border-orange-400 shadow-orange-500/20'
+  }
+
+  const getReticleColor = () => {
+    if (fullyLocked) return '#4ade80' // green-400
+    if (isFine) return '#facc15' // yellow-400
+    return '#fb923c' // orange-400
+  }
+
+  const getStatusText = () => {
+    if (fullyLocked) return 'TARGET ACQUIRED'
+    if (isFine) return 'ALIGN VISUALLY WITH SUN'
+    return 'ACQUIRING TARGET...'
+  }
+
+  const getTextColor = () => {
+    if (fullyLocked) return 'text-green-400'
+    if (isFine) return 'text-yellow-400'
+    return 'text-orange-400'
+  }
 
   return (
     <div className="flex flex-col items-center my-6">
@@ -38,63 +88,52 @@ function GuidanceHUD({ guidance }: { guidance: GuidanceState }) {
       <div
         className={`
           relative w-40 h-40 rounded-full border-4 flex items-center justify-center
-          transition-all duration-300
-          ${fullyLocked
-            ? 'border-green-400 shadow-lg shadow-green-500/40 animate-pulse'
-            : 'border-orange-400 shadow-lg shadow-orange-500/20'
-          }
+          transition-all duration-300 shadow-lg
+          ${getRingColor()}
+          ${fullyLocked ? 'animate-pulse' : ''}
         `}
       >
-        {/* Center Icon */}
-        <Crosshair
-          className={`w-12 h-12 transition-colors duration-300 ${
-            fullyLocked ? 'text-green-400' : 'text-orange-400'
-          }`}
-        />
+        {/* Professional Crosshair Reticle */}
+        <CrosshairReticle color={getReticleColor()} />
 
-        {/* Direction Arrows */}
-        {/* Up Arrow */}
-        {needsUp && !altitudeLocked && (
-          <ChevronUp
-            className="absolute -top-2 left-1/2 -translate-x-1/2 w-10 h-10 text-orange-400 animate-bounce"
-          />
-        )}
-
-        {/* Down Arrow */}
-        {needsDown && !altitudeLocked && (
-          <ChevronDown
-            className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-10 h-10 text-orange-400 animate-bounce"
-          />
-        )}
-
-        {/* Left Arrow */}
-        {needsLeft && !azimuthLocked && (
-          <ChevronLeft
-            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 w-10 h-10 text-orange-400 animate-pulse"
-          />
-        )}
-
-        {/* Right Arrow */}
-        {needsRight && !azimuthLocked && (
-          <ChevronRight
-            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 w-10 h-10 text-orange-400 animate-pulse"
-          />
+        {/* Direction Arrows - only show in coarse mode */}
+        {isCoarse && (
+          <>
+            {needsUp && (
+              <ChevronUp
+                className="absolute -top-2 left-1/2 -translate-x-1/2 w-10 h-10 text-orange-400 animate-bounce"
+              />
+            )}
+            {needsDown && (
+              <ChevronDown
+                className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-10 h-10 text-orange-400 animate-bounce"
+              />
+            )}
+            {needsLeft && (
+              <ChevronLeft
+                className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 w-10 h-10 text-orange-400 animate-pulse"
+              />
+            )}
+            {needsRight && (
+              <ChevronRight
+                className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 w-10 h-10 text-orange-400 animate-pulse"
+              />
+            )}
+          </>
         )}
       </div>
 
       {/* Status Text */}
-      <p className={`mt-4 text-sm font-semibold tracking-wide ${
-        fullyLocked ? 'text-green-400' : 'text-orange-400'
-      }`}>
-        {fullyLocked ? 'TARGET ACQUIRED' : 'ACQUIRING TARGET...'}
+      <p className={`mt-4 text-sm font-semibold tracking-wide ${getTextColor()}`}>
+        {getStatusText()}
       </p>
 
       {/* Delta Display */}
       <div className="flex gap-6 mt-2 text-xs">
-        <span className={azimuthLocked ? 'text-green-400' : 'text-slate-400'}>
+        <span className={guidance.azimuthLocked ? 'text-green-400' : 'text-slate-400'}>
           Az: {guidance.azimuthDelta >= 0 ? '+' : ''}{guidance.azimuthDelta.toFixed(1)}°
         </span>
-        <span className={altitudeLocked ? 'text-green-400' : 'text-slate-400'}>
+        <span className={guidance.altitudeLocked ? 'text-green-400' : 'text-slate-400'}>
           Alt: {guidance.altitudeDelta >= 0 ? '+' : ''}{guidance.altitudeDelta.toFixed(1)}°
         </span>
       </div>
@@ -149,26 +188,37 @@ export function SolarTracker() {
   const guidance = useMemo<GuidanceState | null>(() => {
     if (!normalizedSensor || !targetPosition) return null
 
-    const azimuthDelta = normalizedSensor.azimuth - targetPosition.azimuth
-    const altitudeDelta = normalizedSensor.altitude - targetPosition.altitude
+    // Use shortest angle for azimuth to handle 0-360 wrap-around
+    // Positive = need to turn RIGHT, Negative = need to turn LEFT
+    const azimuthDelta = getShortestAngle(targetPosition.azimuth, normalizedSensor.azimuth)
+    const altitudeDelta = targetPosition.altitude - normalizedSensor.altitude
 
-    const azimuthLocked = Math.abs(azimuthDelta) <= LOCK_THRESHOLD
-    const altitudeLocked = Math.abs(altitudeDelta) <= LOCK_THRESHOLD
+    const absAzimuth = Math.abs(azimuthDelta)
+    const absAltitude = Math.abs(altitudeDelta)
+    const maxDelta = Math.max(absAzimuth, absAltitude)
+
+    const azimuthLocked = absAzimuth <= LOCK_THRESHOLD
+    const altitudeLocked = absAltitude <= LOCK_THRESHOLD
 
     return {
       azimuthDelta,
       altitudeDelta,
-      needsRight: azimuthDelta < -LOCK_THRESHOLD, // Sensor < Target -> turn right
-      needsLeft: azimuthDelta > LOCK_THRESHOLD,   // Sensor > Target -> turn left
-      needsUp: altitudeDelta < -LOCK_THRESHOLD,   // Sensor < Target -> look up
-      needsDown: altitudeDelta > LOCK_THRESHOLD,  // Sensor > Target -> look down
+      needsRight: azimuthDelta > FINE_THRESHOLD,  // Only show in coarse mode
+      needsLeft: azimuthDelta < -FINE_THRESHOLD,
+      needsUp: altitudeDelta > FINE_THRESHOLD,
+      needsDown: altitudeDelta < -FINE_THRESHOLD,
       azimuthLocked,
       altitudeLocked,
       fullyLocked: azimuthLocked && altitudeLocked,
+      isCoarse: maxDelta > FINE_THRESHOLD,
+      isFine: maxDelta <= FINE_THRESHOLD && maxDelta > LOCK_THRESHOLD,
+      canCapture: maxDelta <= CAPTURE_THRESHOLD,
     }
   }, [normalizedSensor, targetPosition])
 
   const isReady = permissionGranted && coordinates && normalizedSensor
+  // Enable capture when sensors ready AND within capture threshold (or always ready if no guidance yet)
+  const canCapture = isReady && (!guidance || guidance.canCapture)
 
   const handleMeasure = async () => {
     if (!coordinates || !normalizedSensor) {
@@ -311,14 +361,16 @@ export function SolarTracker() {
         {/* Capture Button */}
         <button
           onClick={handleMeasure}
-          disabled={!isReady || isCapturing}
+          disabled={!canCapture || isCapturing}
           className={`
             w-20 h-20 rounded-full border-4 flex items-center justify-center
             transition-all duration-200 cursor-pointer
-            ${isReady && !isCapturing
+            ${canCapture && !isCapturing
               ? guidance?.fullyLocked
                 ? 'bg-green-500 border-green-300 hover:bg-green-400 hover:scale-105 active:scale-95 shadow-lg shadow-green-500/30'
-                : 'bg-blue-500 border-blue-300 hover:bg-blue-400 hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/30'
+                : guidance?.isFine
+                  ? 'bg-yellow-500 border-yellow-300 hover:bg-yellow-400 hover:scale-105 active:scale-95 shadow-lg shadow-yellow-500/30'
+                  : 'bg-blue-500 border-blue-300 hover:bg-blue-400 hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/30'
               : 'bg-slate-700 border-slate-600 cursor-not-allowed opacity-50'
             }
           `}
@@ -330,7 +382,14 @@ export function SolarTracker() {
           )}
         </button>
         <p className="text-slate-500 text-sm mt-2">
-          {!coordinates ? 'Waiting for GPS...' : !permissionGranted ? 'Enable sensors first' : 'Tap to capture'}
+          {!coordinates
+            ? 'Waiting for GPS...'
+            : !permissionGranted
+              ? 'Enable sensors first'
+              : !canCapture
+                ? 'Get closer to target (<20°)'
+                : 'Capture what YOU see'
+          }
         </p>
       </div>
 

@@ -51,3 +51,25 @@ export function normalizeOrientation(
 
   return { azimuth, altitude }
 }
+
+/**
+ * Calculate the shortest angular distance from current to target.
+ * Handles the 0-360° wrap-around correctly.
+ *
+ * @param target - Target angle in degrees (0-360)
+ * @param current - Current angle in degrees (0-360)
+ * @returns Shortest angle to turn:
+ *   - Positive: turn RIGHT (clockwise)
+ *   - Negative: turn LEFT (counter-clockwise)
+ *
+ * @example
+ * getShortestAngle(350, 10)  // Returns -20 (turn left 20°)
+ * getShortestAngle(10, 350)  // Returns +20 (turn right 20°)
+ * getShortestAngle(180, 0)   // Returns +180 or -180
+ */
+export function getShortestAngle(target: number, current: number): number {
+  // Adding 540 before modulo ensures we never have negative numbers
+  // This avoids JavaScript's quirky negative modulo behavior
+  // Result: positive = turn RIGHT, negative = turn LEFT
+  return ((target - current + 540) % 360) - 180
+}

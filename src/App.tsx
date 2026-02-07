@@ -1,12 +1,7 @@
-import { SensorDebug } from '@/features/sensor-read/components/SensorDebug'
+import { SolarTracker } from '@/features/astronomy/components/SolarTracker'
 
 function App() {
-  return (
-    <div className="text-3xl font-bold text-blue-600 flex justify-center items-center h-screen">
-      Project Helios Initialized
-      <SensorDebug />
-    </div>
-  )
+  return <SolarTracker />
 }
 
 export default App

@@ -1,192 +1,226 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
+import { Camera, MapPin, Compass, AlertCircle, X } from 'lucide-react'
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
-import { fetchSunPosition, type SunPosition } from '@/services/api'
+import { fetchSunPosition } from '@/services/api'
+
+interface Snapshot {
+  sensor: { azimuth: number; altitude: number }
+  nasa: { azimuth: number; altitude: number }
+  delta: { azimuth: number; altitude: number }
+  timestamp: Date
+}
 
 /**
- * Main dashboard component comparing device sensors with calculated sun position.
- * Features glassmorphism UI, auto-refresh every 30 seconds.
+ * Manual capture solar tracker - compares device orientation with calculated sun position.
+ * Features a camera-shutter style capture button for taking measurements.
  */
 export function SolarTracker() {
   const { data: sensorData, permissionGranted, requestAccess, error: sensorError } = useDeviceOrientation()
   const { coordinates, error: geoError } = useGeoLocation()
-  const [serverData, setServerData] = useState<SunPosition | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
-  const [apiError, setApiError] = useState<string | null>(null)
+  const [isCapturing, setIsCapturing] = useState(false)
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const refreshSolarData = useCallback(async () => {
-    if (!coordinates) return
+  const isReady = permissionGranted && coordinates && sensorData
 
-    setLoading(true)
-    setApiError(null)
+  const handleMeasure = async () => {
+    if (!coordinates || !sensorData) {
+      setError('GPS and sensors must be ready before capturing')
+      return
+    }
+
+    setIsCapturing(true)
+    setError(null)
+
+    // Freeze current sensor values at moment of capture
+    const capturedSensor = {
+      azimuth: sensorData.alpha,
+      altitude: sensorData.beta,
+    }
 
     try {
-      const data = await fetchSunPosition(coordinates.latitude, coordinates.longitude)
-      setServerData(data)
-      setLastUpdated(new Date())
+      const nasa = await fetchSunPosition(coordinates.latitude, coordinates.longitude)
+
+      const delta = {
+        azimuth: capturedSensor.azimuth - nasa.azimuth,
+        altitude: capturedSensor.altitude - nasa.altitude,
+      }
+
+      setSnapshot({
+        sensor: capturedSensor,
+        nasa,
+        delta,
+        timestamp: new Date(),
+      })
     } catch (err) {
-      setApiError(err instanceof Error ? err.message : 'Failed to fetch solar position')
+      setError(err instanceof Error ? err.message : 'Failed to fetch solar position')
     } finally {
-      setLoading(false)
+      setIsCapturing(false)
     }
-  }, [coordinates])
+  }
 
-  // Fetch on coordinates change and set up 30-second refresh interval
-  useEffect(() => {
-    if (!coordinates) return
-
-    // Initial fetch
-    refreshSolarData()
-
-    // Set up auto-refresh every 30 seconds
-    const intervalId = setInterval(() => {
-      refreshSolarData()
-    }, 30000)
-
-    return () => clearInterval(intervalId)
-  }, [coordinates, refreshSolarData])
-
-  // Calculate deltas (sensor - model)
-  const deltaAzimuth = sensorData && serverData
-    ? sensorData.alpha - serverData.azimuth
-    : null
-  const deltaAltitude = sensorData && serverData
-    ? sensorData.beta - serverData.altitude
-    : null
-
-  const formatValue = (value: number | null | undefined): string => {
-    if (value === null || value === undefined) return '—'
+  const formatValue = (value: number): string => {
     return `${value.toFixed(2)}°`
   }
 
-  const formatTime = (date: Date | null): string => {
-    if (!date) return '—'
-    return date.toLocaleTimeString()
+  const formatDelta = (value: number): string => {
+    const sign = value >= 0 ? '+' : ''
+    return `${sign}${value.toFixed(2)}°`
   }
 
-  // Glassmorphism card styles
-  const cardBase = "backdrop-blur-md bg-white/30 border border-white/40 rounded-2xl p-5 shadow-lg"
+  const getDeltaColor = (value: number): string => {
+    return Math.abs(value) > 5 ? 'text-red-400' : 'text-green-400'
+  }
+
+  const dismissError = () => setError(null)
 
   return (
-    <div className="w-full min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white drop-shadow-lg">
-            Solar Tracker
-          </h1>
-          {coordinates && (
-            <p className="text-white/80 mt-2">
-              📍 {coordinates.latitude.toFixed(4)}, {coordinates.longitude.toFixed(4)}
-            </p>
-          )}
-          {lastUpdated && (
-            <p className="text-white/60 text-sm mt-1">
-              Last updated: {formatTime(lastUpdated)}
-            </p>
-          )}
-        </div>
-
-        {/* Permission Request */}
-        {!permissionGranted && (
-          <div className={`${cardBase} text-center`}>
-            <p className="text-white mb-3">Sensor access required for orientation data</p>
-            <button
-              onClick={requestAccess}
-              className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white font-semibold rounded-xl border border-white/40 transition-all cursor-pointer"
-            >
-              Enable Sensors
-            </button>
-          </div>
+    <div className="w-full min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 p-4 flex flex-col">
+      {/* Header Badge */}
+      <div className="text-center mb-4">
+        <span className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500/20 border border-blue-400/30 rounded-full text-blue-300 text-sm font-medium">
+          <Compass className="w-4 h-4" />
+          PROJECT HELIOS
+        </span>
+        {coordinates && (
+          <p className="text-slate-500 text-xs mt-2 flex items-center justify-center gap-1">
+            <MapPin className="w-3 h-3" />
+            {coordinates.latitude.toFixed(4)}, {coordinates.longitude.toFixed(4)}
+          </p>
         )}
+      </div>
 
-        {/* Error States */}
-        {(sensorError || geoError || apiError) && (
-          <div className={`${cardBase} bg-red-500/20 border-red-300/40`}>
-            {sensorError && <p className="text-white text-sm">⚠️ Sensor: {sensorError}</p>}
-            {geoError && <p className="text-white text-sm">⚠️ GPS: {geoError}</p>}
-            {apiError && <p className="text-white text-sm">⚠️ API: {apiError}</p>}
-          </div>
-        )}
-
-        {/* 3-Column Dashboard Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Card 1: My Sensors */}
-          <div className={`${cardBase} bg-blue-500/20`}>
-            <h3 className="text-lg font-semibold text-white mb-4 text-center">
-              My Sensors
-            </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-white/70">Alpha</span>
-                <span className="font-mono text-xl text-white font-bold">
-                  {formatValue(sensorData?.alpha)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-white/70">Beta</span>
-                <span className="font-mono text-xl text-white font-bold">
-                  {formatValue(sensorData?.beta)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 2: NASA Model */}
-          <div className={`${cardBase} bg-green-500/20`}>
-            <h3 className="text-lg font-semibold text-white mb-4 text-center">
-              NASA Model
-            </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-white/70">Azimuth</span>
-                <span className="font-mono text-xl text-white font-bold">
-                  {loading ? '...' : formatValue(serverData?.azimuth)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-white/70">Altitude</span>
-                <span className="font-mono text-xl text-white font-bold">
-                  {loading ? '...' : formatValue(serverData?.altitude)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 3: Delta */}
-          <div className={`${cardBase} bg-purple-500/20`}>
-            <h3 className="text-lg font-semibold text-white mb-4 text-center">
-              Delta (Δ)
-            </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-white/70">Δ Azimuth</span>
-                <span className="font-mono text-xl text-white font-bold">
-                  {formatValue(deltaAzimuth)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-white/70">Δ Altitude</span>
-                <span className="font-mono text-xl text-white font-bold">
-                  {formatValue(deltaAltitude)}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Refresh Button */}
-        <div className="text-center">
-          <button
-            onClick={refreshSolarData}
-            disabled={!coordinates || loading}
-            className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white font-semibold rounded-xl border border-white/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
-          >
-            {loading ? 'Refreshing...' : 'Refresh Now'}
+      {/* Error Toast */}
+      {error && (
+        <div className="mb-4 mx-auto max-w-sm bg-red-500/20 border border-red-400/30 rounded-lg p-3 flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+          <p className="text-red-300 text-sm flex-1">{error}</p>
+          <button onClick={dismissError} className="text-red-400 hover:text-red-300 cursor-pointer">
+            <X className="w-4 h-4" />
           </button>
         </div>
+      )}
+
+      {/* Permission Request */}
+      {!permissionGranted && (
+        <div className="mb-4 mx-auto max-w-sm bg-slate-800/50 border border-slate-600/50 rounded-xl p-4 text-center">
+          <p className="text-slate-300 mb-3 text-sm">Enable sensors to measure orientation</p>
+          <button
+            onClick={requestAccess}
+            className="px-5 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors cursor-pointer"
+          >
+            Enable Sensors
+          </button>
+        </div>
+      )}
+
+      {/* Status Indicators */}
+      {(sensorError || geoError) && (
+        <div className="mb-4 mx-auto max-w-sm text-center space-y-1">
+          {sensorError && <p className="text-amber-400 text-xs">Sensor: {sensorError}</p>}
+          {geoError && <p className="text-amber-400 text-xs">GPS: {geoError}</p>}
+        </div>
+      )}
+
+      {/* Live Sensor Feed */}
+      <div className="flex-1 flex flex-col items-center justify-center">
+        <div className="text-center mb-8">
+          <span className="inline-block px-3 py-1 bg-green-500/20 border border-green-400/30 rounded-full text-green-400 text-xs font-semibold tracking-wider mb-4">
+            LIVE SENSOR
+          </span>
+          <div className="grid grid-cols-2 gap-8">
+            <div>
+              <p className="text-slate-500 text-sm mb-1">AZIMUTH</p>
+              <p className="text-5xl font-mono font-bold text-white">
+                {sensorData ? formatValue(sensorData.alpha) : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-slate-500 text-sm mb-1">ALTITUDE</p>
+              <p className="text-5xl font-mono font-bold text-white">
+                {sensorData ? formatValue(sensorData.beta) : '—'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Capture Button */}
+        <button
+          onClick={handleMeasure}
+          disabled={!isReady || isCapturing}
+          className={`
+            w-24 h-24 rounded-full border-4 flex items-center justify-center
+            transition-all duration-200 cursor-pointer
+            ${isReady && !isCapturing
+              ? 'bg-blue-500 border-blue-300 hover:bg-blue-400 hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/30'
+              : 'bg-slate-700 border-slate-600 cursor-not-allowed opacity-50'
+            }
+          `}
+        >
+          {isCapturing ? (
+            <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <Camera className="w-10 h-10 text-white" />
+          )}
+        </button>
+        <p className="text-slate-500 text-sm mt-3">
+          {!coordinates ? 'Waiting for GPS...' : !permissionGranted ? 'Enable sensors first' : 'Tap to capture'}
+        </p>
       </div>
+
+      {/* Results Card */}
+      {snapshot && (
+        <div className="mt-6 bg-slate-800/70 border border-slate-600/50 rounded-2xl p-5 max-w-md mx-auto w-full">
+          <h3 className="text-slate-300 text-sm font-semibold mb-4 text-center">
+            MEASUREMENT RESULTS
+          </h3>
+
+          {/* Results Grid */}
+          <div className="space-y-3">
+            {/* Header Row */}
+            <div className="grid grid-cols-4 gap-2 text-xs text-slate-500 font-medium">
+              <div></div>
+              <div className="text-center">YOUR</div>
+              <div className="text-center">NASA</div>
+              <div className="text-center">DELTA</div>
+            </div>
+
+            {/* Azimuth Row */}
+            <div className="grid grid-cols-4 gap-2 items-center bg-slate-700/50 rounded-lg p-3">
+              <div className="text-slate-400 text-sm">Azimuth</div>
+              <div className="text-center font-mono text-white">
+                {formatValue(snapshot.sensor.azimuth)}
+              </div>
+              <div className="text-center font-mono text-blue-300">
+                {formatValue(snapshot.nasa.azimuth)}
+              </div>
+              <div className={`text-center font-mono font-semibold ${getDeltaColor(snapshot.delta.azimuth)}`}>
+                {formatDelta(snapshot.delta.azimuth)}
+              </div>
+            </div>
+
+            {/* Altitude Row */}
+            <div className="grid grid-cols-4 gap-2 items-center bg-slate-700/50 rounded-lg p-3">
+              <div className="text-slate-400 text-sm">Altitude</div>
+              <div className="text-center font-mono text-white">
+                {formatValue(snapshot.sensor.altitude)}
+              </div>
+              <div className="text-center font-mono text-blue-300">
+                {formatValue(snapshot.nasa.altitude)}
+              </div>
+              <div className={`text-center font-mono font-semibold ${getDeltaColor(snapshot.delta.altitude)}`}>
+                {formatDelta(snapshot.delta.altitude)}
+              </div>
+            </div>
+          </div>
+
+          {/* Timestamp */}
+          <p className="text-slate-500 text-xs text-center mt-4">
+            Captured at {snapshot.timestamp.toLocaleTimeString()}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

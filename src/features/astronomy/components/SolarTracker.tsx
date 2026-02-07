@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import { Camera, MapPin, Compass, AlertCircle, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Crosshair } from 'lucide-react'
+import { Camera, MapPin, Compass, AlertCircle, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
 import { fetchSunPosition, type SunPosition } from '@/services/api'
 import { normalizeOrientation, getShortestAngle } from '@/utils/sensorMath'
+import { CameraBackground } from '@/features/sensor-read/components/CameraBackground'
 
 interface Snapshot {
   sensor: { azimuth: number; altitude: number }
@@ -32,18 +33,24 @@ const FINE_THRESHOLD = 15 // degrees - switch to fine guidance
 const CAPTURE_THRESHOLD = 20 // degrees - enable capture button
 
 /**
- * Professional crosshair reticle - thin white lines with gap in center
+ * Professional crosshair reticle - colored lines with black outline for visibility
+ * against bright camera backgrounds
  */
 function CrosshairReticle({ color }: { color: string }) {
   return (
     <svg viewBox="0 0 100 100" className="w-20 h-20">
-      {/* Horizontal lines with gap */}
-      <line x1="0" y1="50" x2="35" y2="50" stroke={color} strokeWidth="1.5" />
-      <line x1="65" y1="50" x2="100" y2="50" stroke={color} strokeWidth="1.5" />
-      {/* Vertical lines with gap */}
-      <line x1="50" y1="0" x2="50" y2="35" stroke={color} strokeWidth="1.5" />
-      <line x1="50" y1="65" x2="50" y2="100" stroke={color} strokeWidth="1.5" />
-      {/* Center dot */}
+      {/* Black outline/shadow layer for visibility against bright backgrounds */}
+      <line x1="0" y1="50" x2="35" y2="50" stroke="black" strokeWidth="4" />
+      <line x1="65" y1="50" x2="100" y2="50" stroke="black" strokeWidth="4" />
+      <line x1="50" y1="0" x2="50" y2="35" stroke="black" strokeWidth="4" />
+      <line x1="50" y1="65" x2="50" y2="100" stroke="black" strokeWidth="4" />
+      <circle cx="50" cy="50" r="5" fill="black" />
+
+      {/* Colored foreground layer */}
+      <line x1="0" y1="50" x2="35" y2="50" stroke={color} strokeWidth="2" />
+      <line x1="65" y1="50" x2="100" y2="50" stroke={color} strokeWidth="2" />
+      <line x1="50" y1="0" x2="50" y2="35" stroke={color} strokeWidth="2" />
+      <line x1="50" y1="65" x2="50" y2="100" stroke={color} strokeWidth="2" />
       <circle cx="50" cy="50" r="3" fill={color} />
     </svg>
   )
@@ -84,11 +91,11 @@ function GuidanceHUD({ guidance }: { guidance: GuidanceState }) {
 
   return (
     <div className="flex flex-col items-center my-6">
-      {/* Targeting Ring */}
+      {/* Targeting Ring with backdrop */}
       <div
         className={`
           relative w-40 h-40 rounded-full border-4 flex items-center justify-center
-          transition-all duration-300 shadow-lg
+          transition-all duration-300 shadow-xl bg-black/30 backdrop-blur-sm
           ${getRingColor()}
           ${fullyLocked ? 'animate-pulse' : ''}
         `}
@@ -101,39 +108,46 @@ function GuidanceHUD({ guidance }: { guidance: GuidanceState }) {
           <>
             {needsUp && (
               <ChevronUp
-                className="absolute -top-2 left-1/2 -translate-x-1/2 w-10 h-10 text-orange-400 animate-bounce"
+                className="absolute -top-2 left-1/2 -translate-x-1/2 w-10 h-10 text-orange-400 animate-bounce drop-shadow-lg"
+                style={{ filter: 'drop-shadow(0 0 2px black)' }}
               />
             )}
             {needsDown && (
               <ChevronDown
-                className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-10 h-10 text-orange-400 animate-bounce"
+                className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-10 h-10 text-orange-400 animate-bounce drop-shadow-lg"
+                style={{ filter: 'drop-shadow(0 0 2px black)' }}
               />
             )}
             {needsLeft && (
               <ChevronLeft
-                className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 w-10 h-10 text-orange-400 animate-pulse"
+                className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 w-10 h-10 text-orange-400 animate-pulse drop-shadow-lg"
+                style={{ filter: 'drop-shadow(0 0 2px black)' }}
               />
             )}
             {needsRight && (
               <ChevronRight
-                className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 w-10 h-10 text-orange-400 animate-pulse"
+                className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 w-10 h-10 text-orange-400 animate-pulse drop-shadow-lg"
+                style={{ filter: 'drop-shadow(0 0 2px black)' }}
               />
             )}
           </>
         )}
       </div>
 
-      {/* Status Text */}
-      <p className={`mt-4 text-sm font-semibold tracking-wide ${getTextColor()}`}>
+      {/* Status Text with backdrop */}
+      <p
+        className={`mt-4 text-sm font-semibold tracking-wide ${getTextColor()} drop-shadow-lg`}
+        style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}
+      >
         {getStatusText()}
       </p>
 
       {/* Delta Display */}
-      <div className="flex gap-6 mt-2 text-xs">
-        <span className={guidance.azimuthLocked ? 'text-green-400' : 'text-slate-400'}>
+      <div className="flex gap-6 mt-2 text-xs bg-black/40 backdrop-blur-sm px-3 py-1 rounded-full">
+        <span className={guidance.azimuthLocked ? 'text-green-400' : 'text-white/70'}>
           Az: {guidance.azimuthDelta >= 0 ? '+' : ''}{guidance.azimuthDelta.toFixed(1)}°
         </span>
-        <span className={guidance.altitudeLocked ? 'text-green-400' : 'text-slate-400'}>
+        <span className={guidance.altitudeLocked ? 'text-green-400' : 'text-white/70'}>
           Alt: {guidance.altitudeDelta >= 0 ? '+' : ''}{guidance.altitudeDelta.toFixed(1)}°
         </span>
       </div>
@@ -272,15 +286,18 @@ export function SolarTracker() {
   const dismissError = () => setError(null)
 
   return (
-    <div className="w-full min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 p-4 flex flex-col">
+    <div className="w-full min-h-screen p-4 flex flex-col relative">
+      {/* AR Camera Background */}
+      <CameraBackground />
+
       {/* Header Badge */}
       <div className="text-center mb-4">
-        <span className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500/20 border border-blue-400/30 rounded-full text-blue-300 text-sm font-medium">
+        <span className="inline-flex items-center gap-2 px-4 py-2 bg-black/50 backdrop-blur-sm border border-blue-400/30 rounded-full text-blue-300 text-sm font-medium shadow-lg">
           <Compass className="w-4 h-4" />
           PROJECT HELIOS
         </span>
         {coordinates && (
-          <p className="text-slate-500 text-xs mt-2 flex items-center justify-center gap-1">
+          <p className="text-white/70 text-xs mt-2 flex items-center justify-center gap-1 drop-shadow-md">
             <MapPin className="w-3 h-3" />
             {coordinates.latitude.toFixed(4)}, {coordinates.longitude.toFixed(4)}
           </p>
@@ -289,9 +306,9 @@ export function SolarTracker() {
 
       {/* Error Toast */}
       {error && (
-        <div className="mb-4 mx-auto max-w-sm bg-red-500/20 border border-red-400/30 rounded-lg p-3 flex items-center gap-3">
+        <div className="mb-4 mx-auto max-w-sm bg-red-900/70 backdrop-blur-sm border border-red-400/30 rounded-lg p-3 flex items-center gap-3 shadow-lg">
           <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
-          <p className="text-red-300 text-sm flex-1">{error}</p>
+          <p className="text-red-200 text-sm flex-1">{error}</p>
           <button onClick={dismissError} className="text-red-400 hover:text-red-300 cursor-pointer">
             <X className="w-4 h-4" />
           </button>
@@ -300,11 +317,11 @@ export function SolarTracker() {
 
       {/* Permission Request */}
       {!permissionGranted && (
-        <div className="mb-4 mx-auto max-w-sm bg-slate-800/50 border border-slate-600/50 rounded-xl p-4 text-center">
-          <p className="text-slate-300 mb-3 text-sm">Enable sensors to measure orientation</p>
+        <div className="mb-4 mx-auto max-w-sm bg-black/60 backdrop-blur-md border border-slate-400/30 rounded-xl p-4 text-center shadow-xl">
+          <p className="text-white mb-3 text-sm">Enable sensors to measure orientation</p>
           <button
             onClick={requestAccess}
-            className="px-5 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors cursor-pointer"
+            className="px-5 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors cursor-pointer shadow-lg"
           >
             Enable Sensors
           </button>
@@ -313,44 +330,44 @@ export function SolarTracker() {
 
       {/* Status Indicators */}
       {(sensorError || geoError) && (
-        <div className="mb-4 mx-auto max-w-sm text-center space-y-1">
-          {sensorError && <p className="text-amber-400 text-xs">Sensor: {sensorError}</p>}
-          {geoError && <p className="text-amber-400 text-xs">GPS: {geoError}</p>}
+        <div className="mb-4 mx-auto max-w-sm text-center space-y-1 bg-black/40 backdrop-blur-sm rounded-lg px-3 py-2">
+          {sensorError && <p className="text-amber-300 text-xs drop-shadow-md">Sensor: {sensorError}</p>}
+          {geoError && <p className="text-amber-300 text-xs drop-shadow-md">GPS: {geoError}</p>}
         </div>
       )}
 
       {/* Live Sensor Feed */}
       <div className="flex-1 flex flex-col items-center justify-center">
-        <div className="text-center mb-4">
-          <span className="inline-block px-3 py-1 bg-green-500/20 border border-green-400/30 rounded-full text-green-400 text-xs font-semibold tracking-wider mb-4">
+        <div className="text-center mb-4 bg-black/50 backdrop-blur-md rounded-2xl px-6 py-4 shadow-xl border border-white/10">
+          <span className="inline-block px-3 py-1 bg-green-500/30 border border-green-400/40 rounded-full text-green-400 text-xs font-semibold tracking-wider mb-4">
             LIVE SENSOR
           </span>
           <div className="grid grid-cols-2 gap-8">
             <div>
-              <p className="text-slate-500 text-sm mb-1">AZIMUTH</p>
-              <p className="text-4xl font-mono font-bold text-white">
+              <p className="text-white/60 text-sm mb-1">AZIMUTH</p>
+              <p className="text-4xl font-mono font-bold text-white drop-shadow-lg" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}>
                 {normalizedSensor ? formatValue(normalizedSensor.azimuth) : '—'}
               </p>
             </div>
             <div>
-              <p className="text-slate-500 text-sm mb-1">ALTITUDE</p>
-              <p className="text-4xl font-mono font-bold text-white">
+              <p className="text-white/60 text-sm mb-1">ALTITUDE</p>
+              <p className="text-4xl font-mono font-bold text-white drop-shadow-lg" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}>
                 {normalizedSensor ? formatValue(normalizedSensor.altitude) : '—'}
               </p>
             </div>
           </div>
-          <p className="text-slate-600 text-xs mt-2">(Assumes Portrait Mode)</p>
+          <p className="text-white/40 text-xs mt-2">(Assumes Portrait Mode)</p>
         </div>
 
         {/* Target Info */}
         {targetPosition && (
-          <div className="text-center mb-2">
-            <span className="inline-block px-3 py-1 bg-blue-500/20 border border-blue-400/30 rounded-full text-blue-400 text-xs font-semibold tracking-wider mb-2">
+          <div className="text-center mb-2 bg-black/40 backdrop-blur-sm rounded-xl px-4 py-2 border border-white/10">
+            <span className="inline-block px-3 py-1 bg-blue-500/30 border border-blue-400/40 rounded-full text-blue-300 text-xs font-semibold tracking-wider mb-2">
               TARGET (SUN)
             </span>
             <div className="flex gap-6 text-sm">
-              <span className="text-blue-300 font-mono">Az: {formatValue(targetPosition.azimuth)}</span>
-              <span className="text-blue-300 font-mono">Alt: {formatValue(targetPosition.altitude)}</span>
+              <span className="text-blue-200 font-mono drop-shadow-md">Az: {formatValue(targetPosition.azimuth)}</span>
+              <span className="text-blue-200 font-mono drop-shadow-md">Alt: {formatValue(targetPosition.altitude)}</span>
             </div>
           </div>
         )}
@@ -381,7 +398,10 @@ export function SolarTracker() {
             <Camera className="w-8 h-8 text-white" />
           )}
         </button>
-        <p className="text-slate-500 text-sm mt-2">
+        <p
+          className="text-white/70 text-sm mt-2 drop-shadow-md"
+          style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}
+        >
           {!coordinates
             ? 'Waiting for GPS...'
             : !permissionGranted
@@ -395,15 +415,15 @@ export function SolarTracker() {
 
       {/* Results Card */}
       {snapshot && (
-        <div className="mt-4 bg-slate-800/70 border border-slate-600/50 rounded-2xl p-4 max-w-md mx-auto w-full">
-          <h3 className="text-slate-300 text-sm font-semibold mb-3 text-center">
+        <div className="mt-4 bg-black/60 backdrop-blur-md border border-white/20 rounded-2xl p-4 max-w-md mx-auto w-full shadow-xl">
+          <h3 className="text-white text-sm font-semibold mb-3 text-center">
             MEASUREMENT RESULTS
           </h3>
 
           {/* Results Grid */}
           <div className="space-y-2">
             {/* Header Row */}
-            <div className="grid grid-cols-4 gap-2 text-xs text-slate-500 font-medium">
+            <div className="grid grid-cols-4 gap-2 text-xs text-white/60 font-medium">
               <div></div>
               <div className="text-center">YOUR</div>
               <div className="text-center">NASA</div>
@@ -411,8 +431,8 @@ export function SolarTracker() {
             </div>
 
             {/* Azimuth Row */}
-            <div className="grid grid-cols-4 gap-2 items-center bg-slate-700/50 rounded-lg p-2">
-              <div className="text-slate-400 text-sm">Azimuth</div>
+            <div className="grid grid-cols-4 gap-2 items-center bg-white/10 rounded-lg p-2">
+              <div className="text-white/70 text-sm">Azimuth</div>
               <div className="text-center font-mono text-white text-sm">
                 {formatValue(snapshot.sensor.azimuth)}
               </div>
@@ -425,8 +445,8 @@ export function SolarTracker() {
             </div>
 
             {/* Altitude Row */}
-            <div className="grid grid-cols-4 gap-2 items-center bg-slate-700/50 rounded-lg p-2">
-              <div className="text-slate-400 text-sm">Altitude</div>
+            <div className="grid grid-cols-4 gap-2 items-center bg-white/10 rounded-lg p-2">
+              <div className="text-white/70 text-sm">Altitude</div>
               <div className="text-center font-mono text-white text-sm">
                 {formatValue(snapshot.sensor.altitude)}
               </div>
@@ -440,7 +460,7 @@ export function SolarTracker() {
           </div>
 
           {/* Timestamp */}
-          <p className="text-slate-500 text-xs text-center mt-3">
+          <p className="text-white/50 text-xs text-center mt-3">
             Captured at {snapshot.timestamp.toLocaleTimeString()}
           </p>
         </div>

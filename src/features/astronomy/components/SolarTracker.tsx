@@ -31,6 +31,10 @@ export function SolarTracker() {
   const [error, setError] = useState<string | null>(null)
   const [targetPosition, setTargetPosition] = useState<SunPosition | null>(null)
 
+  // Hidden dev feature: tap header 5 times to reset calibration
+  const [devTapCount, setDevTapCount] = useState(0)
+  const [lastTapTime, setLastTapTime] = useState(0)
+
   // Normalize raw sensor data to astronomical coordinates
   const normalizedSensor = useMemo(() => {
     if (!sensorData) return null
@@ -190,17 +194,39 @@ export function SolarTracker() {
 
   const dismissError = () => setError(null)
 
+  // Hidden dev feature: tap header 5 times within 2 seconds to reset calibration
+  const handleHeaderTap = () => {
+    const now = Date.now()
+    // Reset counter if more than 2 seconds since last tap
+    if (now - lastTapTime > 2000) {
+      setDevTapCount(1)
+    } else {
+      setDevTapCount((c) => c + 1)
+    }
+    setLastTapTime(now)
+
+    // Trigger reset on 5th tap
+    if (devTapCount >= 4) {
+      localStorage.removeItem('helios_calibrated')
+      setDevTapCount(0)
+      window.location.reload()
+    }
+  }
+
   return (
     <div className="w-full min-h-screen p-4 flex flex-col relative">
       {/* AR Camera Background */}
       <CameraBackground />
 
-      {/* Header Badge */}
+      {/* Header Badge - tap 5 times to reset calibration */}
       <div className="text-center mb-4">
-        <span className="inline-flex items-center gap-2 px-4 py-2 bg-black/50 backdrop-blur-sm border border-blue-400/30 rounded-full text-blue-300 text-sm font-medium shadow-lg">
+        <button
+          onClick={handleHeaderTap}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-black/50 backdrop-blur-sm border border-blue-400/30 rounded-full text-blue-300 text-sm font-medium shadow-lg cursor-pointer"
+        >
           <Compass className="w-4 h-4" />
           PROJECT HELIOS
-        </span>
+        </button>
         {coordinates && (
           <p className="text-white/70 text-xs mt-2 flex items-center justify-center gap-1 drop-shadow-md">
             <MapPin className="w-3 h-3" />

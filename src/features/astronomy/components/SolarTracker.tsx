@@ -58,10 +58,9 @@ function CrosshairReticle({ color }: { color: string }) {
 
 /**
  * Guidance HUD component - shows directional arrows to guide user to target
- * Coarse mode (>15°): arrows + orange ring
- * Fine mode (<15°): no arrows, yellow/green ring, "ALIGN VISUALLY"
+ * Provides directional guidance text instead of "acquiring" language
  */
-function GuidanceHUD({ guidance }: { guidance: GuidanceState }) {
+function GuidanceHUD({ guidance, isNightMode }: { guidance: GuidanceState; isNightMode: boolean }) {
   const { needsRight, needsLeft, needsUp, needsDown, fullyLocked, isCoarse, isFine } = guidance
 
   // Determine ring color based on state
@@ -77,10 +76,23 @@ function GuidanceHUD({ guidance }: { guidance: GuidanceState }) {
     return '#fb923c' // orange-400
   }
 
+  // Build directional guidance text
   const getStatusText = () => {
-    if (fullyLocked) return 'TARGET ACQUIRED'
-    if (isFine) return 'ALIGN VISUALLY WITH SUN'
-    return 'ACQUIRING TARGET...'
+    if (fullyLocked) return 'ON TARGET'
+
+    // Build direction hints
+    const directions: string[] = []
+    if (needsUp) directions.push('Above')
+    if (needsDown) directions.push('Below')
+    if (needsLeft) directions.push('Left')
+    if (needsRight) directions.push('Right')
+
+    if (directions.length === 0) {
+      // Fine mode - close but not locked
+      return 'Almost there...'
+    }
+
+    return `Sun is ${directions.join(' & ')}`
   }
 
   const getTextColor = () => {
@@ -91,6 +103,14 @@ function GuidanceHUD({ guidance }: { guidance: GuidanceState }) {
 
   return (
     <div className="flex flex-col items-center my-6">
+      {/* Night Mode Warning Badge */}
+      {isNightMode && (
+        <div className="mb-3 px-3 py-1.5 bg-indigo-900/70 backdrop-blur-sm border border-indigo-400/40 rounded-full flex items-center gap-2">
+          <span className="text-indigo-300 text-xs font-semibold">🌙 NIGHT MODE</span>
+          <span className="text-indigo-400/70 text-xs">Sun Below Horizon</span>
+        </div>
+      )}
+
       {/* Targeting Ring with backdrop */}
       <div
         className={`
@@ -231,8 +251,11 @@ export function SolarTracker() {
   }, [normalizedSensor, targetPosition])
 
   const isReady = permissionGranted && coordinates && normalizedSensor
-  // Enable capture when sensors ready AND within capture threshold (or always ready if no guidance yet)
-  const canCapture = isReady && (!guidance || guidance.canCapture)
+  // Always enable capture when sensors are ready - no accuracy threshold required
+  const canCapture = isReady
+
+  // Check if sun is below horizon (night mode)
+  const isNightMode = targetPosition && targetPosition.altitude < 0
 
   const handleMeasure = async () => {
     if (!coordinates || !normalizedSensor) {
@@ -373,9 +396,9 @@ export function SolarTracker() {
         )}
 
         {/* Guidance HUD */}
-        {guidance && <GuidanceHUD guidance={guidance} />}
+        {guidance && <GuidanceHUD guidance={guidance} isNightMode={!!isNightMode} />}
 
-        {/* Capture Button */}
+        {/* Capture Button - Always enabled when sensors ready, with inviting pulse */}
         <button
           onClick={handleMeasure}
           disabled={!canCapture || isCapturing}
@@ -384,10 +407,8 @@ export function SolarTracker() {
             transition-all duration-200 cursor-pointer
             ${canCapture && !isCapturing
               ? guidance?.fullyLocked
-                ? 'bg-green-500 border-green-300 hover:bg-green-400 hover:scale-105 active:scale-95 shadow-lg shadow-green-500/30'
-                : guidance?.isFine
-                  ? 'bg-yellow-500 border-yellow-300 hover:bg-yellow-400 hover:scale-105 active:scale-95 shadow-lg shadow-yellow-500/30'
-                  : 'bg-blue-500 border-blue-300 hover:bg-blue-400 hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/30'
+                ? 'bg-green-500 border-green-300 hover:bg-green-400 hover:scale-105 active:scale-95 shadow-lg shadow-green-500/30 animate-pulse'
+                : 'bg-blue-500 border-blue-300 hover:bg-blue-400 hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/30 animate-[pulse_2s_ease-in-out_infinite]'
               : 'bg-slate-700 border-slate-600 cursor-not-allowed opacity-50'
             }
           `}
@@ -406,9 +427,7 @@ export function SolarTracker() {
             ? 'Waiting for GPS...'
             : !permissionGranted
               ? 'Enable sensors first'
-              : !canCapture
-                ? 'Get closer to target (<20°)'
-                : 'Capture what YOU see'
+              : 'Tap to capture measurement'
           }
         </p>
       </div>

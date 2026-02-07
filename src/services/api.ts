@@ -35,6 +35,8 @@ export interface MeasurementResult {
   nasa_altitude: number
   delta_azimuth: number
   delta_altitude: number
+  magnetic_azimuth: number | null
+  magnetic_declination: number | null
 }
 
 /**
@@ -72,7 +74,9 @@ export async function saveMeasurement(
   lat: number,
   lon: number,
   deviceAzimuth: number,
-  deviceAltitude: number
+  deviceAltitude: number,
+  magneticAzimuth?: number,
+  magneticDeclination?: number
 ): Promise<MeasurementResult> {
   try {
     const response = await api.post<MeasurementResult>('/api/v1/solar/measure', {
@@ -81,6 +85,8 @@ export async function saveMeasurement(
       device_azimuth: deviceAzimuth,
       device_altitude: deviceAltitude,
       device_id: getDeviceId(),
+      magnetic_azimuth: magneticAzimuth,
+      magnetic_declination: magneticDeclination,
     })
 
     return response.data

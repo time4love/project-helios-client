@@ -4,6 +4,7 @@ import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
 import { fetchSunPosition, saveMeasurement, RateLimitError, type SunPosition } from '@/services/api'
 import { normalizeOrientation, getShortestAngle } from '@/utils/sensorMath'
+import { getTrueNorth } from '@/utils/magnetic'
 import { CameraBackground } from '@/features/sensor-read/components/CameraBackground'
 import { GuidanceHUD, type GuidanceState } from './GuidanceHUD'
 
@@ -36,6 +37,26 @@ export function SolarTracker() {
     return normalizeOrientation(sensorData.alpha, sensorData.beta, sensorData.gamma)
   }, [sensorData])
 
+  // Apply magnetic declination correction to get True North azimuth
+  const magneticCorrection = useMemo(() => {
+    if (!normalizedSensor || !coordinates) return null
+    return getTrueNorth(
+      normalizedSensor.azimuth,
+      coordinates.latitude,
+      coordinates.longitude
+    )
+  }, [normalizedSensor, coordinates])
+
+  // The corrected sensor values (True North)
+  const correctedSensor = useMemo(() => {
+    if (!normalizedSensor) return null
+    if (!magneticCorrection) return normalizedSensor // Fallback if no GPS
+    return {
+      azimuth: magneticCorrection.trueAzimuth,
+      altitude: normalizedSensor.altitude, // Altitude unchanged
+    }
+  }, [normalizedSensor, magneticCorrection])
+
   // Fetch target position when GPS is available
   const fetchTarget = useCallback(async () => {
     if (!coordinates) return
@@ -63,12 +84,12 @@ export function SolarTracker() {
 
   // Calculate guidance state
   const guidance = useMemo<GuidanceState | null>(() => {
-    if (!normalizedSensor || !targetPosition) return null
+    if (!correctedSensor || !targetPosition) return null
 
     // Use shortest angle for azimuth to handle 0-360 wrap-around
     // Positive = need to turn RIGHT, Negative = need to turn LEFT
-    const azimuthDelta = getShortestAngle(targetPosition.azimuth, normalizedSensor.azimuth)
-    const altitudeDelta = targetPosition.altitude - normalizedSensor.altitude
+    const azimuthDelta = getShortestAngle(targetPosition.azimuth, correctedSensor.azimuth)
+    const altitudeDelta = targetPosition.altitude - correctedSensor.altitude
 
     const absAzimuth = Math.abs(azimuthDelta)
     const absAltitude = Math.abs(altitudeDelta)
@@ -91,9 +112,9 @@ export function SolarTracker() {
       isFine: maxDelta <= FINE_THRESHOLD && maxDelta > LOCK_THRESHOLD,
       canCapture: maxDelta <= CAPTURE_THRESHOLD,
     }
-  }, [normalizedSensor, targetPosition])
+  }, [correctedSensor, targetPosition])
 
-  const isReady = permissionGranted && coordinates && normalizedSensor
+  const isReady = permissionGranted && coordinates && correctedSensor
   // Always enable capture when sensors are ready - no accuracy threshold required
   const canCapture = isReady
 
@@ -101,7 +122,7 @@ export function SolarTracker() {
   const isNightMode = targetPosition && targetPosition.altitude < 0
 
   const handleMeasure = async () => {
-    if (!coordinates || !normalizedSensor) {
+    if (!coordinates || !correctedSensor || !normalizedSensor) {
       setError('GPS and sensors must be ready before capturing')
       return
     }
@@ -109,19 +130,25 @@ export function SolarTracker() {
     setIsCapturing(true)
     setError(null)
 
-    // Freeze current normalized sensor values at moment of capture
+    // Freeze current sensor values at moment of capture
+    // device_azimuth = True North (corrected)
+    // magnetic_azimuth = raw sensor value (magnetic north)
     const capturedSensor = {
-      azimuth: normalizedSensor.azimuth,
-      altitude: normalizedSensor.altitude,
+      azimuth: correctedSensor.azimuth, // True North
+      altitude: correctedSensor.altitude,
+      magneticAzimuth: normalizedSensor.azimuth, // Raw magnetic
+      magneticDeclination: magneticCorrection?.declination ?? 0,
     }
 
     try {
-      // Save measurement to backend (includes sensor data for DB storage)
+      // Save measurement to backend with both true and magnetic values
       const result = await saveMeasurement(
         coordinates.latitude,
         coordinates.longitude,
         capturedSensor.azimuth,
-        capturedSensor.altitude
+        capturedSensor.altitude,
+        capturedSensor.magneticAzimuth,
+        capturedSensor.magneticDeclination
       )
 
       // Use the response from backend (which includes NASA calculation and deltas)
@@ -222,12 +249,12 @@ export function SolarTracker() {
           </span>
           <div className="grid grid-cols-2 gap-8">
             <div>
-              <p className="text-white/60 text-sm mb-1">AZIMUTH</p>
+              <p className="text-white/60 text-sm mb-1">AZIMUTH (TRUE N)</p>
               <p
                 className="text-4xl font-mono font-bold text-white drop-shadow-lg"
                 style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
               >
-                {normalizedSensor ? formatValue(normalizedSensor.azimuth) : '—'}
+                {correctedSensor ? formatValue(correctedSensor.azimuth) : '—'}
               </p>
             </div>
             <div>
@@ -236,11 +263,17 @@ export function SolarTracker() {
                 className="text-4xl font-mono font-bold text-white drop-shadow-lg"
                 style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
               >
-                {normalizedSensor ? formatValue(normalizedSensor.altitude) : '—'}
+                {correctedSensor ? formatValue(correctedSensor.altitude) : '—'}
               </p>
             </div>
           </div>
-          <p className="text-white/40 text-xs mt-2">(Assumes Portrait Mode)</p>
+          {magneticCorrection && (
+            <p className="text-amber-400/80 text-xs mt-2 font-mono">
+              Magnetic Declination: {magneticCorrection.declination >= 0 ? '+' : ''}
+              {magneticCorrection.declination.toFixed(1)}°
+            </p>
+          )}
+          <p className="text-white/40 text-xs mt-1">(Assumes Portrait Mode)</p>
         </div>
 
         {/* Target Info */}

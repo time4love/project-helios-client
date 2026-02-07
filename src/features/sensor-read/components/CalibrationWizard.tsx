@@ -5,13 +5,14 @@ type CalibrationStep = 'intro' | 'calibrating' | 'done'
 
 const STORAGE_KEY = 'helios_calibrated'
 
-// Energy multiplier - tuned so vigorous Figure-8 motion takes ~3-5 seconds
-const ENERGY_MULTIPLIER = 0.015
+// Motion detection thresholds
+const MOTION_THRESHOLD = 15 // Minimum rotation speed to count as "real" motion (filters tremors)
+const MAX_INCREMENT = 0.5 // Max progress per frame (caps fast shaking) - tuned for ~4-5 seconds
 
 /**
  * One-time calibration wizard overlay.
  * Guides users through a Figure-8 motion to calibrate the device compass.
- * Uses real device motion data to track progress.
+ * Uses real device motion data with throttling to ensure sustained movement.
  * Only shown once per device (persisted in localStorage).
  */
 export function CalibrationWizard() {
@@ -20,24 +21,28 @@ export function CalibrationWizard() {
   })
   const [step, setStep] = useState<CalibrationStep>('intro')
   const [progress, setProgress] = useState(0)
+  const [isMoving, setIsMoving] = useState(false)
 
-  // Motion event handler
+  // Motion event handler with throttling
   const handleMotion = useCallback((event: DeviceMotionEvent) => {
     const rotationRate = event.rotationRate
     if (!rotationRate) return
 
-    // Calculate rotation energy from all axes
+    // Calculate rotation speed from all axes
     const alpha = Math.abs(rotationRate.alpha ?? 0)
     const beta = Math.abs(rotationRate.beta ?? 0)
     const gamma = Math.abs(rotationRate.gamma ?? 0)
+    const rotationSpeed = alpha + beta + gamma
 
-    const energy = alpha + beta + gamma
-
-    // Accumulate progress based on motion energy
-    setProgress((prev) => {
-      const newProgress = Math.min(100, prev + energy * ENERGY_MULTIPLIER)
-      return newProgress
-    })
+    // Only count motion above threshold (filters hand tremors)
+    if (rotationSpeed > MOTION_THRESHOLD) {
+      setIsMoving(true)
+      // Throttle: cap increment regardless of motion intensity
+      const increment = Math.min(rotationSpeed * 0.01, MAX_INCREMENT)
+      setProgress((prev) => Math.min(100, prev + increment))
+    } else {
+      setIsMoving(false)
+    }
   }, [])
 
   // Listen to device motion during calibrating step
@@ -46,6 +51,7 @@ export function CalibrationWizard() {
 
     // Reset progress when entering calibration
     setProgress(0)
+    setIsMoving(false)
 
     // Add motion listener
     window.addEventListener('devicemotion', handleMotion)
@@ -71,14 +77,23 @@ export function CalibrationWizard() {
     setIsVisible(false)
   }
 
-  // Dynamic instruction text based on progress
-  const getInstructionText = () => {
-    if (progress < 10) return 'Start waving your phone...'
-    if (progress < 80) return 'Keep moving in Figure 8...'
-    return 'Almost there...'
+  // Dynamic instruction text and color based on motion state
+  const getMotionFeedback = () => {
+    if (progress >= 90) {
+      return { text: 'Almost there!', color: 'text-green-400' }
+    }
+    if (isMoving) {
+      return { text: 'Good motion! Keep going...', color: 'text-green-400' }
+    }
+    if (progress < 5) {
+      return { text: 'Start waving your phone...', color: 'text-slate-400' }
+    }
+    return { text: 'Keep moving...', color: 'text-amber-400' }
   }
 
   if (!isVisible) return null
+
+  const feedback = getMotionFeedback()
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md">
@@ -127,32 +142,28 @@ export function CalibrationWizard() {
                   stroke="#334155"
                   strokeWidth="6"
                 />
-                {/* Progress arc */}
+                {/* Progress arc - color changes based on motion */}
                 <circle
                   cx="50"
                   cy="50"
                   r="42"
                   fill="none"
-                  stroke="url(#progressGradient)"
+                  stroke={isMoving ? '#22c55e' : '#f59e0b'}
                   strokeWidth="6"
                   strokeLinecap="round"
                   strokeDasharray={`${progress * 2.64} 264`}
-                  className="transition-all duration-100"
+                  className="transition-all duration-150"
                 />
-                <defs>
-                  <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="#3b82f6" />
-                    <stop offset="100%" stopColor="#8b5cf6" />
-                  </linearGradient>
-                </defs>
               </svg>
 
               {/* Center content */}
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-bold text-white font-mono">
+                <span className={`text-3xl font-bold font-mono transition-colors ${isMoving ? 'text-green-400' : 'text-white'}`}>
                   {Math.round(progress)}%
                 </span>
-                <span className="text-xs text-slate-400 mt-1">calibrating</span>
+                <span className={`text-xs mt-1 transition-colors ${isMoving ? 'text-green-400/70' : 'text-slate-400'}`}>
+                  {isMoving ? 'detecting' : 'waiting'}
+                </span>
               </div>
             </div>
 
@@ -175,8 +186,8 @@ export function CalibrationWizard() {
             <h2 className="text-xl font-semibold text-white mb-2">
               Wave Your Phone
             </h2>
-            <p className="text-slate-300 text-sm">
-              {getInstructionText()}
+            <p className={`text-sm font-medium transition-colors ${feedback.color}`}>
+              {feedback.text}
             </p>
           </div>
         )}

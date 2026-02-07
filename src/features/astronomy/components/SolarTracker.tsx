@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Camera, MapPin, Compass, AlertCircle, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
-import { fetchSunPosition, saveMeasurement, type SunPosition } from '@/services/api'
+import { fetchSunPosition, saveMeasurement, RateLimitError, type SunPosition } from '@/services/api'
 import { normalizeOrientation, getShortestAngle } from '@/utils/sensorMath'
 import { CameraBackground } from '@/features/sensor-read/components/CameraBackground'
 
@@ -295,7 +295,11 @@ export function SolarTracker() {
         timestamp: new Date(result.created_at),
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save measurement')
+      if (err instanceof RateLimitError) {
+        setError('Please wait a moment before measuring again.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to save measurement')
+      }
     } finally {
       setIsCapturing(false)
     }

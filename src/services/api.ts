@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { getDeviceId } from '@/utils/identity'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL,
@@ -6,6 +7,16 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 })
+
+/**
+ * Custom error class for rate limiting (HTTP 429)
+ */
+export class RateLimitError extends Error {
+  constructor(message = 'Too many requests. Please wait a moment.') {
+    super(message)
+    this.name = 'RateLimitError'
+  }
+}
 
 export interface SunPosition {
   azimuth: number
@@ -52,6 +63,9 @@ export async function fetchSunPosition(
  * Save a measurement with device sensor data.
  * Sends device readings to backend, which calculates NASA position,
  * computes deltas, and saves to database.
+ * Includes anonymous device fingerprint for rate limiting.
+ *
+ * @throws {RateLimitError} When the user has exceeded the rate limit (HTTP 429)
  */
 export async function saveMeasurement(
   lat: number,
@@ -59,12 +73,21 @@ export async function saveMeasurement(
   deviceAzimuth: number,
   deviceAltitude: number
 ): Promise<MeasurementResult> {
-  const response = await api.post<MeasurementResult>('/api/v1/solar/measure', {
-    latitude: lat,
-    longitude: lon,
-    device_azimuth: deviceAzimuth,
-    device_altitude: deviceAltitude,
-  })
+  try {
+    const response = await api.post<MeasurementResult>('/api/v1/solar/measure', {
+      latitude: lat,
+      longitude: lon,
+      device_azimuth: deviceAzimuth,
+      device_altitude: deviceAltitude,
+      device_id: getDeviceId(),
+    })
 
-  return response.data
+    return response.data
+  } catch (error) {
+    // Handle rate limiting specifically
+    if (axios.isAxiosError(error) && error.response?.status === 429) {
+      throw new RateLimitError()
+    }
+    throw error
+  }
 }

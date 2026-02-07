@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { SolarTracker } from '@/features/astronomy/components/SolarTracker'
 import { GlobalMap } from '@/features/astronomy/components/GlobalMap'
 import { StatsDashboard } from '@/features/astronomy/components/StatsDashboard'
+import { CalibrationWizard } from '@/features/sensor-read/components/CalibrationWizard'
 
 type AppMode = 'measure' | 'map' | 'stats'
 
@@ -10,6 +11,9 @@ function App() {
 
   return (
     <div className="relative">
+      {/* One-time calibration overlay */}
+      <CalibrationWizard />
+
       {/* Main content */}
       {mode === 'measure' && <SolarTracker />}
       {mode === 'map' && <GlobalMap />}

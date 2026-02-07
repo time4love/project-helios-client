@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Camera, MapPin, Compass, AlertCircle, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
-import { fetchSunPosition, type SunPosition } from '@/services/api'
+import { fetchSunPosition, saveMeasurement, type SunPosition } from '@/services/api'
 import { normalizeOrientation, getShortestAngle } from '@/utils/sensorMath'
 import { CameraBackground } from '@/features/sensor-read/components/CameraBackground'
 
@@ -273,21 +273,29 @@ export function SolarTracker() {
     }
 
     try {
-      const nasa = await fetchSunPosition(coordinates.latitude, coordinates.longitude)
+      // Save measurement to backend (includes sensor data for DB storage)
+      const result = await saveMeasurement(
+        coordinates.latitude,
+        coordinates.longitude,
+        capturedSensor.azimuth,
+        capturedSensor.altitude
+      )
 
-      const delta = {
-        azimuth: capturedSensor.azimuth - nasa.azimuth,
-        altitude: capturedSensor.altitude - nasa.altitude,
-      }
-
+      // Use the response from backend (which includes NASA calculation and deltas)
       setSnapshot({
         sensor: capturedSensor,
-        nasa,
-        delta,
-        timestamp: new Date(),
+        nasa: {
+          azimuth: result.nasa_azimuth,
+          altitude: result.nasa_altitude,
+        },
+        delta: {
+          azimuth: result.delta_azimuth,
+          altitude: result.delta_altitude,
+        },
+        timestamp: new Date(result.created_at),
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch solar position')
+      setError(err instanceof Error ? err.message : 'Failed to save measurement')
     } finally {
       setIsCapturing(false)
     }

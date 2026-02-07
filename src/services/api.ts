@@ -94,12 +94,22 @@ export async function saveMeasurement(
 }
 
 /**
- * Get all measurements for visualization on the global map.
+ * Get measurements for visualization on the global map.
+ * Filters by date (defaults to today on the server if not provided).
  * Returns measurements ordered by created_at descending.
+ *
+ * @param date - Optional date string in YYYY-MM-DD format
+ * @param limit - Maximum number of measurements to return (default: 5000)
  */
-export async function getMeasurements(limit = 100): Promise<MeasurementResult[]> {
+export async function getMeasurements(
+  date?: string,
+  limit = 5000
+): Promise<MeasurementResult[]> {
   const response = await api.get<MeasurementResult[]>('/api/v1/solar/measurements', {
-    params: { limit },
+    params: {
+      target_date: date,
+      limit,
+    },
   })
   return response.data
 }

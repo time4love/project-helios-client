@@ -1,14 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { CheckCircle, Compass } from 'lucide-react'
 
 type CalibrationStep = 'intro' | 'calibrating' | 'done'
 
 const STORAGE_KEY = 'helios_calibrated'
-const CALIBRATION_DURATION_MS = 5000
+
+// Energy multiplier - tuned so vigorous Figure-8 motion takes ~3-5 seconds
+const ENERGY_MULTIPLIER = 0.015
 
 /**
  * One-time calibration wizard overlay.
  * Guides users through a Figure-8 motion to calibrate the device compass.
+ * Uses real device motion data to track progress.
  * Only shown once per device (persisted in localStorage).
  */
 export function CalibrationWizard() {
@@ -16,17 +19,48 @@ export function CalibrationWizard() {
     return !localStorage.getItem(STORAGE_KEY)
   })
   const [step, setStep] = useState<CalibrationStep>('intro')
+  const [progress, setProgress] = useState(0)
 
-  // Auto-advance from calibrating to done after duration
+  // Motion event handler
+  const handleMotion = useCallback((event: DeviceMotionEvent) => {
+    const rotationRate = event.rotationRate
+    if (!rotationRate) return
+
+    // Calculate rotation energy from all axes
+    const alpha = Math.abs(rotationRate.alpha ?? 0)
+    const beta = Math.abs(rotationRate.beta ?? 0)
+    const gamma = Math.abs(rotationRate.gamma ?? 0)
+
+    const energy = alpha + beta + gamma
+
+    // Accumulate progress based on motion energy
+    setProgress((prev) => {
+      const newProgress = Math.min(100, prev + energy * ENERGY_MULTIPLIER)
+      return newProgress
+    })
+  }, [])
+
+  // Listen to device motion during calibrating step
   useEffect(() => {
     if (step !== 'calibrating') return
 
-    const timer = setTimeout(() => {
-      setStep('done')
-    }, CALIBRATION_DURATION_MS)
+    // Reset progress when entering calibration
+    setProgress(0)
 
-    return () => clearTimeout(timer)
-  }, [step])
+    // Add motion listener
+    window.addEventListener('devicemotion', handleMotion)
+
+    return () => {
+      window.removeEventListener('devicemotion', handleMotion)
+    }
+  }, [step, handleMotion])
+
+  // Auto-advance when progress reaches 100
+  useEffect(() => {
+    if (progress >= 100 && step === 'calibrating') {
+      setStep('done')
+    }
+  }, [progress, step])
 
   const handleStartCalibration = () => {
     setStep('calibrating')
@@ -35,6 +69,13 @@ export function CalibrationWizard() {
   const handleComplete = () => {
     localStorage.setItem(STORAGE_KEY, 'true')
     setIsVisible(false)
+  }
+
+  // Dynamic instruction text based on progress
+  const getInstructionText = () => {
+    if (progress < 10) return 'Start waving your phone...'
+    if (progress < 80) return 'Keep moving in Figure 8...'
+    return 'Almost there...'
   }
 
   if (!isVisible) return null
@@ -74,48 +115,69 @@ export function CalibrationWizard() {
         {/* Calibrating Step */}
         {step === 'calibrating' && (
           <div className="animate-fade-in">
-            {/* Figure-8 Animation */}
-            <div className="w-32 h-32 mx-auto mb-6 relative flex items-center justify-center">
-              <svg
-                viewBox="0 0 100 50"
-                className="w-full h-full animate-figure-eight-draw"
-              >
-                <path
-                  d="M 25 25 C 25 10, 50 10, 50 25 C 50 40, 75 40, 75 25 C 75 10, 50 10, 50 25 C 50 40, 25 40, 25 25"
+            {/* Circular Progress Ring */}
+            <div className="w-40 h-40 mx-auto mb-6 relative flex items-center justify-center">
+              {/* Background circle */}
+              <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="42"
                   fill="none"
-                  stroke="url(#gradient)"
-                  strokeWidth="3"
+                  stroke="#334155"
+                  strokeWidth="6"
+                />
+                {/* Progress arc */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="42"
+                  fill="none"
+                  stroke="url(#progressGradient)"
+                  strokeWidth="6"
                   strokeLinecap="round"
-                  className="animate-dash"
+                  strokeDasharray={`${progress * 2.64} 264`}
+                  className="transition-all duration-100"
                 />
                 <defs>
-                  <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
                     <stop offset="0%" stopColor="#3b82f6" />
-                    <stop offset="50%" stopColor="#8b5cf6" />
-                    <stop offset="100%" stopColor="#3b82f6" />
+                    <stop offset="100%" stopColor="#8b5cf6" />
                   </linearGradient>
                 </defs>
               </svg>
 
-              {/* Pulsing dot following the path */}
-              <div className="absolute w-4 h-4 bg-blue-400 rounded-full shadow-lg shadow-blue-400/50 animate-figure-eight-move" />
+              {/* Center content */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-3xl font-bold text-white font-mono">
+                  {Math.round(progress)}%
+                </span>
+                <span className="text-xs text-slate-400 mt-1">calibrating</span>
+              </div>
             </div>
 
-            {/* Instructions */}
-            <h2 className="text-xl font-semibold text-white mb-3">
+            {/* Figure-8 hint animation */}
+            <div className="w-24 h-12 mx-auto mb-4 relative">
+              <svg viewBox="0 0 100 50" className="w-full h-full opacity-50">
+                <path
+                  d="M 25 25 C 25 10, 50 10, 50 25 C 50 40, 75 40, 75 25 C 75 10, 50 10, 50 25 C 50 40, 25 40, 25 25"
+                  fill="none"
+                  stroke="#64748b"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeDasharray="4 4"
+                />
+              </svg>
+              <div className="absolute w-3 h-3 bg-blue-400 rounded-full shadow-lg shadow-blue-400/50 animate-figure-eight-move top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+
+            {/* Dynamic Instructions */}
+            <h2 className="text-xl font-semibold text-white mb-2">
               Wave Your Phone
             </h2>
-            <p className="text-slate-300 mb-6">
-              Move your device in a <span className="text-blue-400 font-semibold">Figure 8</span> motion
+            <p className="text-slate-300 text-sm">
+              {getInstructionText()}
             </p>
-
-            {/* Progress indicator */}
-            <div className="w-48 h-1 mx-auto bg-slate-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-calibration-progress"
-              />
-            </div>
-            <p className="text-slate-500 text-sm mt-3">Calibrating sensors...</p>
           </div>
         )}
 
@@ -158,15 +220,6 @@ export function CalibrationWizard() {
           animation: fade-in 0.4s ease-out;
         }
 
-        @keyframes dash {
-          0% { stroke-dasharray: 0, 200; stroke-dashoffset: 0; }
-          50% { stroke-dasharray: 100, 200; stroke-dashoffset: -50; }
-          100% { stroke-dasharray: 0, 200; stroke-dashoffset: -200; }
-        }
-        .animate-dash {
-          animation: dash 2s ease-in-out infinite;
-        }
-
         @keyframes figure-eight-move {
           0%, 100% { transform: translate(-24px, 0); }
           25% { transform: translate(0, -12px); }
@@ -175,14 +228,6 @@ export function CalibrationWizard() {
         }
         .animate-figure-eight-move {
           animation: figure-eight-move 2s ease-in-out infinite;
-        }
-
-        @keyframes calibration-progress {
-          from { width: 0%; }
-          to { width: 100%; }
-        }
-        .animate-calibration-progress {
-          animation: calibration-progress ${CALIBRATION_DURATION_MS}ms linear forwards;
         }
 
         @keyframes success-pop {

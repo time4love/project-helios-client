@@ -26,6 +26,7 @@ export interface SunPosition {
 export interface MeasurementResult {
   id: number
   created_at: string
+  device_id: string | null
   latitude: number
   longitude: number
   device_azimuth: number
@@ -90,4 +91,15 @@ export async function saveMeasurement(
     }
     throw error
   }
+}
+
+/**
+ * Get all measurements for visualization on the global map.
+ * Returns measurements ordered by created_at descending.
+ */
+export async function getMeasurements(limit = 100): Promise<MeasurementResult[]> {
+  const response = await api.get<MeasurementResult[]>('/api/v1/solar/measurements', {
+    params: { limit },
+  })
+  return response.data
 }

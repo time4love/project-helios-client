@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import { Icon } from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { getMeasurements, MeasurementResult } from '@/services/api'
+import { getMeasurements, type MeasurementResult } from '@/services/api'
 
 // Fix for default marker icons in react-leaflet
 const markerIcon = new Icon({

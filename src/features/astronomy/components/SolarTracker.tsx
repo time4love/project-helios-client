@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
-import { Camera, MapPin, Compass, AlertCircle, X, Sun, Glasses, Timer } from 'lucide-react'
+import { Camera, MapPin, Compass, AlertCircle, X, Sun, Glasses, Timer, Check, Trash2, Lightbulb } from 'lucide-react'
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
 import { fetchSunPosition, saveMeasurement, RateLimitError, type SunPosition } from '@/services/api'
@@ -12,6 +12,18 @@ interface Snapshot {
   sensor: { azimuth: number; altitude: number }
   nasa: { azimuth: number; altitude: number }
   delta: { azimuth: number; altitude: number }
+  timestamp: Date
+}
+
+interface PendingMeasurement {
+  deviceAzimuth: number
+  deviceAltitude: number
+  magneticAzimuth: number
+  magneticDeclination: number
+  targetAzimuth: number
+  targetAltitude: number
+  latitude: number
+  longitude: number
   timestamp: Date
 }
 
@@ -41,6 +53,10 @@ export function SolarTracker() {
   // Self-timer for shake-free capture
   const [isTimerEnabled, setIsTimerEnabled] = useState(false)
   const [countdown, setCountdown] = useState<number | null>(null)
+
+  // Review workflow state
+  const [pendingMeasurement, setPendingMeasurement] = useState<PendingMeasurement | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Audio context for countdown beeps (initialized on first user interaction)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -165,39 +181,72 @@ export function SolarTracker() {
   // Check if sun is below horizon (night mode)
   const isNightMode = targetPosition && targetPosition.altitude < 0
 
-  const handleMeasure = async () => {
-    if (!coordinates || !correctedSensor || !normalizedSensor) {
-      setError('GPS and sensors must be ready before capturing')
+  // Capture measurement data WITHOUT calling API - goes to review modal
+  const handleMeasure = () => {
+    if (!coordinates || !correctedSensor || !normalizedSensor || !targetPosition) {
+      setError('GPS, sensors, and target position must be ready before capturing')
       return
     }
 
-    setIsCapturing(true)
-    setError(null)
-
-    // Freeze current sensor values at moment of capture
-    // device_azimuth = True North (corrected)
-    // magnetic_azimuth = raw sensor value (magnetic north)
-    const capturedSensor = {
-      azimuth: correctedSensor.azimuth, // True North
-      altitude: correctedSensor.altitude,
-      magneticAzimuth: normalizedSensor.azimuth, // Raw magnetic
+    // Freeze current values at moment of capture
+    const pending: PendingMeasurement = {
+      deviceAzimuth: correctedSensor.azimuth,
+      deviceAltitude: correctedSensor.altitude,
+      magneticAzimuth: normalizedSensor.azimuth,
       magneticDeclination: magneticCorrection?.declination ?? 0,
+      targetAzimuth: targetPosition.azimuth,
+      targetAltitude: targetPosition.altitude,
+      latitude: coordinates.latitude,
+      longitude: coordinates.longitude,
+      timestamp: new Date(),
     }
 
+    setPendingMeasurement(pending)
+  }
+
+  // Calculate quality assessment for pending measurement
+  const getQualityAssessment = (pending: PendingMeasurement) => {
+    const deltaAz = Math.abs(getShortestAngle(pending.targetAzimuth, pending.deviceAzimuth))
+    const deltaAlt = Math.abs(pending.targetAltitude - pending.deviceAltitude)
+    const maxDelta = Math.max(deltaAz, deltaAlt)
+
+    if (maxDelta < 3) {
+      return { level: 'excellent' as const, color: 'green', emoji: '🎯', text: 'High Precision!', deltaAz, deltaAlt }
+    } else if (maxDelta < 10) {
+      return { level: 'good' as const, color: 'yellow', emoji: '👌', text: 'Acceptable.', deltaAz, deltaAlt }
+    } else {
+      return { level: 'poor' as const, color: 'red', emoji: '⚠️', text: 'High Deviation Detected.', deltaAz, deltaAlt }
+    }
+  }
+
+  // Discard pending measurement
+  const handleDiscard = () => {
+    setPendingMeasurement(null)
+  }
+
+  // Submit pending measurement to API
+  const handleSubmit = async () => {
+    if (!pendingMeasurement) return
+
+    setIsSubmitting(true)
+    setError(null)
+
     try {
-      // Save measurement to backend with both true and magnetic values
       const result = await saveMeasurement(
-        coordinates.latitude,
-        coordinates.longitude,
-        capturedSensor.azimuth,
-        capturedSensor.altitude,
-        capturedSensor.magneticAzimuth,
-        capturedSensor.magneticDeclination
+        pendingMeasurement.latitude,
+        pendingMeasurement.longitude,
+        pendingMeasurement.deviceAzimuth,
+        pendingMeasurement.deviceAltitude,
+        pendingMeasurement.magneticAzimuth,
+        pendingMeasurement.magneticDeclination
       )
 
-      // Use the response from backend (which includes NASA calculation and deltas)
+      // Update snapshot with result
       setSnapshot({
-        sensor: capturedSensor,
+        sensor: {
+          azimuth: pendingMeasurement.deviceAzimuth,
+          altitude: pendingMeasurement.deviceAltitude,
+        },
         nasa: {
           azimuth: result.nasa_azimuth,
           altitude: result.nasa_altitude,
@@ -208,14 +257,17 @@ export function SolarTracker() {
         },
         timestamp: new Date(result.created_at),
       })
+
+      // Clear pending measurement
+      setPendingMeasurement(null)
     } catch (err) {
       if (err instanceof RateLimitError) {
-        setError('Please wait a moment before measuring again.')
+        setError('Please wait a moment before submitting.')
       } else {
         setError(err instanceof Error ? err.message : 'Failed to save measurement')
       }
     } finally {
-      setIsCapturing(false)
+      setIsSubmitting(false)
     }
   }
 
@@ -343,6 +395,120 @@ export function SolarTracker() {
             </span>
           </div>
         </>
+      )}
+
+      {/* Review Modal - Quality Assessment before submitting */}
+      {pendingMeasurement && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={handleDiscard} />
+
+          {/* Modal Content */}
+          <div className="relative bg-slate-900 border border-white/20 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            {/* Header */}
+            <h2 className="text-xl font-bold text-white text-center mb-4">
+              Measurement Captured
+            </h2>
+
+            {/* Captured Values */}
+            <div className="bg-black/40 rounded-xl p-4 mb-4">
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div>
+                  <p className="text-white/60 text-xs mb-1">AZIMUTH</p>
+                  <p className="text-2xl font-mono font-bold text-white">
+                    {pendingMeasurement.deviceAzimuth.toFixed(2)}°
+                  </p>
+                </div>
+                <div>
+                  <p className="text-white/60 text-xs mb-1">ALTITUDE</p>
+                  <p className="text-2xl font-mono font-bold text-white">
+                    {pendingMeasurement.deviceAltitude.toFixed(2)}°
+                  </p>
+                </div>
+              </div>
+              <p className="text-white/40 text-xs text-center mt-2">
+                {pendingMeasurement.timestamp.toLocaleTimeString()}
+              </p>
+            </div>
+
+            {/* Quality Assessment */}
+            {(() => {
+              const quality = getQualityAssessment(pendingMeasurement)
+              return (
+                <>
+                  <div className={`
+                    rounded-xl p-4 mb-4 text-center border
+                    ${quality.color === 'green' ? 'bg-green-500/20 border-green-400/40' : ''}
+                    ${quality.color === 'yellow' ? 'bg-yellow-500/20 border-yellow-400/40' : ''}
+                    ${quality.color === 'red' ? 'bg-red-500/20 border-red-400/40' : ''}
+                  `}>
+                    <p className={`text-lg font-semibold mb-1
+                      ${quality.color === 'green' ? 'text-green-400' : ''}
+                      ${quality.color === 'yellow' ? 'text-yellow-400' : ''}
+                      ${quality.color === 'red' ? 'text-red-400' : ''}
+                    `}>
+                      {quality.emoji} {quality.text}
+                    </p>
+                    <p className="text-white/70 text-sm">
+                      Est. Error: ~{Math.max(quality.deltaAz, quality.deltaAlt).toFixed(1)}°
+                    </p>
+                    <p className="text-white/50 text-xs mt-1">
+                      (Az: ±{quality.deltaAz.toFixed(1)}°, Alt: ±{quality.deltaAlt.toFixed(1)}°)
+                    </p>
+                  </div>
+
+                  {/* Poor Quality Tip */}
+                  {quality.level === 'poor' && (
+                    <div className="flex items-start gap-2 bg-amber-900/30 border border-amber-400/30 rounded-lg p-3 mb-4">
+                      <Lightbulb className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-amber-200 text-xs leading-relaxed">
+                        Try using the timer, resting on a stable surface, or moving away from metal objects.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleDiscard}
+                      disabled={isSubmitting}
+                      className={`
+                        flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition-all
+                        ${quality.level === 'poor'
+                          ? 'bg-red-500 hover:bg-red-400 text-white'
+                          : 'bg-white/10 hover:bg-white/20 text-white/70'
+                        }
+                        ${isSubmitting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                      `}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Discard
+                    </button>
+                    <button
+                      onClick={handleSubmit}
+                      disabled={isSubmitting}
+                      className={`
+                        flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition-all
+                        ${quality.level !== 'poor'
+                          ? 'bg-green-500 hover:bg-green-400 text-white'
+                          : 'bg-white/10 hover:bg-white/20 text-white/70'
+                        }
+                        ${isSubmitting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                      `}
+                    >
+                      {isSubmitting ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
+                      {isSubmitting ? 'Submitting...' : 'Submit'}
+                    </button>
+                  </div>
+                </>
+              )
+            })()}
+          </div>
+        </div>
       )}
 
       {/* Sun Mode Toggle Button - top left corner (fixed positioning for proper z-index) */}

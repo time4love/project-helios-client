@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import { Camera, MapPin, Compass, AlertCircle, X } from 'lucide-react'
+import { Camera, MapPin, Compass, AlertCircle, X, Sun } from 'lucide-react'
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
 import { fetchSunPosition, saveMeasurement, RateLimitError, type SunPosition } from '@/services/api'
@@ -34,6 +34,9 @@ export function SolarTracker() {
   // Hidden dev feature: tap header 5 times to reset calibration
   const [devTapCount, setDevTapCount] = useState(0)
   const [lastTapTime, setLastTapTime] = useState(0)
+
+  // Sun filter for glare reduction
+  const [isSunFilterActive, setIsSunFilterActive] = useState(false)
 
   // Normalize raw sensor data to astronomical coordinates
   const normalizedSensor = useMemo(() => {
@@ -218,6 +221,34 @@ export function SolarTracker() {
       {/* AR Camera Background */}
       <CameraBackground />
 
+      {/* Sun Filter Overlay - tunnel vision effect */}
+      {isSunFilterActive && (
+        <div
+          className="fixed inset-0 pointer-events-none z-10"
+          style={{
+            background: 'radial-gradient(circle at center, transparent 20%, rgba(0,0,0,0.7) 50%, rgba(0,0,0,0.95) 100%)',
+          }}
+        />
+      )}
+
+      {/* Sun Filter Toggle Button - top left corner */}
+      <button
+        onClick={() => setIsSunFilterActive((prev) => !prev)}
+        className={`
+          absolute top-4 left-4 z-20 flex items-center gap-2 px-3 py-2 rounded-full
+          backdrop-blur-sm border transition-all cursor-pointer shadow-lg
+          ${isSunFilterActive
+            ? 'bg-amber-500/30 border-amber-400/50 text-amber-300'
+            : 'bg-black/50 border-white/20 text-white/70 hover:border-white/40'
+          }
+        `}
+      >
+        <Sun className={`w-4 h-4 ${isSunFilterActive ? 'animate-pulse' : ''}`} />
+        <span className="text-xs font-medium">
+          {isSunFilterActive ? 'Filter ON' : 'Sun Filter'}
+        </span>
+      </button>
+
       {/* Header Badge - tap 5 times to reset calibration */}
       <div className="text-center mb-4">
         <button
@@ -319,17 +350,20 @@ export function SolarTracker() {
         {guidance && <GuidanceHUD guidance={guidance} isNightMode={!!isNightMode} />}
 
         {/* Capture Button - Always enabled when sensors ready, with inviting pulse */}
+        {/* When sun filter is active, use high-contrast cyan color for visibility */}
         <button
           onClick={handleMeasure}
           disabled={!canCapture || isCapturing}
           className={`
             w-20 h-20 rounded-full border-4 flex items-center justify-center
-            transition-all duration-200 cursor-pointer
+            transition-all duration-200 cursor-pointer z-20
             ${
               canCapture && !isCapturing
-                ? guidance?.fullyLocked
-                  ? 'bg-green-500 border-green-300 hover:bg-green-400 hover:scale-105 active:scale-95 shadow-lg shadow-green-500/30 animate-pulse'
-                  : 'bg-blue-500 border-blue-300 hover:bg-blue-400 hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/30 animate-[pulse_2s_ease-in-out_infinite]'
+                ? isSunFilterActive
+                  ? 'bg-cyan-500 border-cyan-300 hover:bg-cyan-400 hover:scale-105 active:scale-95 shadow-lg shadow-cyan-500/50 animate-pulse'
+                  : guidance?.fullyLocked
+                    ? 'bg-green-500 border-green-300 hover:bg-green-400 hover:scale-105 active:scale-95 shadow-lg shadow-green-500/30 animate-pulse'
+                    : 'bg-blue-500 border-blue-300 hover:bg-blue-400 hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/30 animate-[pulse_2s_ease-in-out_infinite]'
                 : 'bg-slate-700 border-slate-600 cursor-not-allowed opacity-50'
             }
           `}
@@ -337,7 +371,7 @@ export function SolarTracker() {
           {isCapturing ? (
             <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
           ) : (
-            <Camera className="w-8 h-8 text-white" />
+            <Camera className={`w-8 h-8 ${isSunFilterActive ? 'text-black' : 'text-white'}`} />
           )}
         </button>
         <p className="text-white/70 text-sm mt-2 drop-shadow-md" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>

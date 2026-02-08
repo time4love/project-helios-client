@@ -2,6 +2,19 @@ import { useState, useEffect, useCallback } from 'react'
 import { getLatestVerdict, type VerdictResult } from '@/services/api'
 
 /**
+ * Get conditional color class based on error magnitude
+ * - Error < 2°: Green (excellent)
+ * - Error 2-5°: Amber (acceptable)
+ * - Error > 5°: Red (poor)
+ */
+function getErrorColorClass(error: number): string {
+  const absError = Math.abs(error)
+  if (absError < 2) return 'text-green-400'
+  if (absError <= 5) return 'text-amber-400'
+  return 'text-red-400'
+}
+
+/**
  * Format timestamp to DD/MM/YYYY HH:mm
  */
 function formatTimestamp(isoString: string): string {
@@ -228,9 +241,9 @@ export function VerdictMeter() {
           </div>
         </div>
 
-        {/* Stats panel */}
-        <div className="flex-1 grid grid-cols-2 gap-4 w-full lg:w-auto">
-          <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+        {/* Status Panel */}
+        <div className="flex-1 w-full lg:w-auto">
+          <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700 mb-4">
             <p className="text-slate-500 text-xs font-mono uppercase tracking-wider">Status</p>
             <p
               className={`text-xl font-bold mt-1 ${
@@ -241,34 +254,82 @@ export function VerdictMeter() {
             </p>
           </div>
 
-          <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
-            <p className="text-slate-500 text-xs font-mono uppercase tracking-wider">
-              Valid Samples
-            </p>
-            <p className="text-xl font-bold text-amber-400 mt-1">
-              {verdict.valid_samples.toLocaleString()}
-              <span className="text-slate-500 text-sm font-normal ml-2">
-                / {verdict.total_samples.toLocaleString()}
-              </span>
-            </p>
-          </div>
+          {/* Telemetry Grid */}
+          <div className="bg-slate-950 rounded-lg border border-slate-600 p-3">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                <span className="text-amber-500">&#x25C8;</span>
+                RAW TELEMETRY
+              </h3>
+              <div className="group relative">
+                <button
+                  className="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors"
+                  aria-label="Telemetry info"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </button>
+                {/* Tooltip */}
+                <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-slate-800 border border-slate-600 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    These values represent the average deviation between device sensor readings
+                    and the astronomical model (NASA/Pysolar). Lower values indicate better
+                    calibration accuracy.
+                  </p>
+                  <div className="mt-2 pt-2 border-t border-slate-700 text-xs">
+                    <span className="text-green-400">&lt;2°</span>
+                    <span className="text-slate-500 mx-1">Excellent</span>
+                    <span className="text-amber-400 ml-2">2-5°</span>
+                    <span className="text-slate-500 mx-1">Good</span>
+                    <span className="text-red-400 ml-2">&gt;5°</span>
+                    <span className="text-slate-500 mx-1">Poor</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-          <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
-            <p className="text-slate-500 text-xs font-mono uppercase tracking-wider">
-              Avg Azimuth Error
-            </p>
-            <p className="text-xl font-bold text-blue-400 mt-1">
-              {verdict.avg_error_azimuth.toFixed(2)}°
-            </p>
-          </div>
+            <div className="grid grid-cols-3 gap-3">
+              {/* N Valid/Total */}
+              <div className="bg-slate-900/80 rounded p-2 border border-slate-700">
+                <p className="text-slate-500 text-xs font-mono uppercase tracking-tight">
+                  N Valid/Total
+                </p>
+                <p className="text-lg font-mono font-bold text-cyan-400 mt-1">
+                  {verdict.valid_samples.toLocaleString()}
+                  <span className="text-slate-500 text-sm font-normal">
+                    /{verdict.total_samples.toLocaleString()}
+                  </span>
+                </p>
+              </div>
 
-          <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
-            <p className="text-slate-500 text-xs font-mono uppercase tracking-wider">
-              Avg Altitude Error
-            </p>
-            <p className="text-xl font-bold text-blue-400 mt-1">
-              {verdict.avg_error_altitude.toFixed(2)}°
-            </p>
+              {/* Avg Δ Azimuth */}
+              <div className="bg-slate-900/80 rounded p-2 border border-slate-700">
+                <p className="text-slate-500 text-xs font-mono uppercase tracking-tight">
+                  Avg Δ Az
+                </p>
+                <p className={`text-lg font-mono font-bold mt-1 ${getErrorColorClass(verdict.avg_error_azimuth)}`}>
+                  {verdict.avg_error_azimuth.toFixed(2)}
+                  <span className="text-slate-400 text-sm">°</span>
+                </p>
+              </div>
+
+              {/* Avg Δ Altitude */}
+              <div className="bg-slate-900/80 rounded p-2 border border-slate-700">
+                <p className="text-slate-500 text-xs font-mono uppercase tracking-tight">
+                  Avg Δ Alt
+                </p>
+                <p className={`text-lg font-mono font-bold mt-1 ${getErrorColorClass(verdict.avg_error_altitude)}`}>
+                  {verdict.avg_error_altitude.toFixed(2)}
+                  <span className="text-slate-400 text-sm">°</span>
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

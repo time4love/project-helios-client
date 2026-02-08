@@ -37,6 +37,7 @@ export interface MeasurementResult {
   delta_altitude: number
   magnetic_azimuth: number | null
   magnetic_declination: number | null
+  flat_earth_sun_height_km: number | null
 }
 
 /**
@@ -126,6 +127,10 @@ export interface StatsResult {
   avg_delta_altitude: number | null
   std_dev_azimuth: number | null
   std_dev_altitude: number | null
+  // Flat Earth triangulation statistics
+  flat_earth_samples: number | null
+  avg_flat_earth_sun_height_km: number | null
+  std_dev_flat_earth_sun_height_km: number | null
 }
 
 /**

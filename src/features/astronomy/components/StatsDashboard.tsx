@@ -19,6 +19,7 @@ import {
   type MeasurementResult,
 } from '@/services/api'
 import { VerdictMeter } from './VerdictMeter'
+import { FlatEarthProofChart } from './FlatEarthProofChart'
 
 function getTodayString(): string {
   return new Date().toISOString().split('T')[0]
@@ -188,6 +189,11 @@ export function StatsDashboard() {
         <>
           {/* Verdict Meter */}
           <VerdictMeter />
+
+          {/* Flat Earth Triangulation Chart */}
+          <div className="mb-6">
+            <FlatEarthProofChart measurements={measurements} stats={stats} />
+          </div>
 
           {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">

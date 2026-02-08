@@ -18,6 +18,7 @@ import {
   type StatsResult,
   type MeasurementResult,
 } from '@/services/api'
+import { VerdictMeter } from './VerdictMeter'
 
 function getTodayString(): string {
   return new Date().toISOString().split('T')[0]
@@ -185,6 +186,9 @@ export function StatsDashboard() {
 
       {!loading && !error && stats && (
         <>
+          {/* Verdict Meter */}
+          <VerdictMeter />
+
           {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             <KPICard title="Total Measurements" value={stats.count} />

@@ -150,3 +150,23 @@ export function downloadCSV(date?: string): void {
   const url = `${baseUrl}/api/v1/solar/export${params.toString() ? '?' + params.toString() : ''}`
   window.open(url, '_blank')
 }
+
+export interface VerdictResult {
+  id: number
+  created_at: string
+  total_samples: number
+  valid_samples: number
+  avg_error_azimuth: number
+  avg_error_altitude: number
+  confidence_score: number
+  winning_model: 'NASA' | 'ANOMALY'
+}
+
+/**
+ * Get the latest Earth model verdict.
+ * Returns analysis of last 24h of measurements.
+ */
+export async function getLatestVerdict(): Promise<VerdictResult> {
+  const response = await api.get<VerdictResult>('/api/v1/verdict/latest')
+  return response.data
+}

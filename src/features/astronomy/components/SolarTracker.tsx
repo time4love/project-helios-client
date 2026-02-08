@@ -38,7 +38,7 @@ const CAPTURE_THRESHOLD = 20 // degrees - enable capture button
 export function SolarTracker() {
   const { data: sensorData, permissionGranted, requestAccess, error: sensorError } = useDeviceOrientation()
   const { coordinates, error: geoError } = useGeoLocation()
-  const [isCapturing, setIsCapturing] = useState(false)
+  const [isCapturing] = useState(false) // Reserved for future use (e.g., camera shutter animation)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [targetPosition, setTargetPosition] = useState<SunPosition | null>(null)

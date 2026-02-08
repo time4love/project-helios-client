@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
-import { Camera, MapPin, Compass, AlertCircle, X, Sun, Timer, Check, Trash2, Lightbulb, Scale, Navigation, Volume2, VolumeX } from 'lucide-react'
+import { Camera, MapPin, Compass, AlertCircle, X, Sun, Timer, Check, Trash2, Lightbulb, Scale, Navigation, Volume2, VolumeX, HelpCircle } from 'lucide-react'
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
 import { fetchSunPosition, saveMeasurement, RateLimitError, type SunPosition, type CollectionMethod } from '@/services/api'
@@ -8,6 +8,7 @@ import { getTrueNorth } from '@/utils/magnetic'
 import { CameraBackground } from '@/features/sensor-read/components/CameraBackground'
 import { GuidanceHUD, type GuidanceState } from './GuidanceHUD'
 import { LevelCalibration } from '@/features/sensor-read/components/LevelCalibration'
+import { ShadowTutorial } from './ShadowTutorial'
 
 interface Snapshot {
   sensor: { azimuth: number; altitude: number }
@@ -73,6 +74,9 @@ export function SolarTracker() {
 
   // Level calibration modal
   const [showLevelCalibration, setShowLevelCalibration] = useState(false)
+
+  // Shadow tutorial modal (manual open via help button)
+  const [showTutorial, setShowTutorial] = useState(false)
 
   // Audio feedback toggle
   const [isAudioEnabled, setIsAudioEnabled] = useState(true)
@@ -491,6 +495,12 @@ export function SolarTracker() {
         sensorData={sensorData}
       />
 
+      {/* Shadow Tutorial - auto-shows on first visit, can be reopened via help button */}
+      <ShadowTutorial
+        forceOpen={showTutorial}
+        onClose={() => setShowTutorial(false)}
+      />
+
       {/* Countdown UI */}
       {countdown !== null && (
         <>
@@ -648,6 +658,17 @@ export function SolarTracker() {
           >
             {isAudioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
+
+          {/* Help button - only visible in Shadow mode */}
+          {viewMode === 'SHADOW' && (
+            <button
+              onClick={() => setShowTutorial(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-full backdrop-blur-sm border transition-all cursor-pointer shadow-lg bg-black/50 border-white/20 text-white/70 hover:border-white/40"
+              title="How to use Shadow Method"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Right: Mode Toggle */}

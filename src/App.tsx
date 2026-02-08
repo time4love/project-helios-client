@@ -9,6 +9,25 @@ const GlobalMap = lazy(() => import('@/features/astronomy/components/GlobalMap')
 
 type AppMode = 'measure' | 'map' | 'stats'
 
+interface NavButtonProps {
+  label: string
+  isActive: boolean
+  onClick: () => void
+}
+
+function NavButton({ label, isActive, onClick }: NavButtonProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${
+        isActive ? 'bg-amber-600 text-white' : 'text-white/70 hover:text-white'
+      }`}
+    >
+      {label}
+    </button>
+  )
+}
+
 // Loading fallback for lazy-loaded components
 function MapLoadingFallback() {
   return (
@@ -40,36 +59,9 @@ function App() {
       {/* Navigation toggle */}
       <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1001]">
         <div className="flex bg-black/80 backdrop-blur-md rounded-full p-1 shadow-lg border border-white/20">
-          <button
-            onClick={() => setMode('measure')}
-            className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${
-              mode === 'measure'
-                ? 'bg-amber-600 text-white'
-                : 'text-white/70 hover:text-white'
-            }`}
-          >
-            Measure
-          </button>
-          <button
-            onClick={() => setMode('map')}
-            className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${
-              mode === 'map'
-                ? 'bg-amber-600 text-white'
-                : 'text-white/70 hover:text-white'
-            }`}
-          >
-            Map
-          </button>
-          <button
-            onClick={() => setMode('stats')}
-            className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${
-              mode === 'stats'
-                ? 'bg-amber-600 text-white'
-                : 'text-white/70 hover:text-white'
-            }`}
-          >
-            Stats
-          </button>
+          <NavButton label="Measure" isActive={mode === 'measure'} onClick={() => setMode('measure')} />
+          <NavButton label="Map" isActive={mode === 'map'} onClick={() => setMode('map')} />
+          <NavButton label="Stats" isActive={mode === 'stats'} onClick={() => setMode('stats')} />
         </div>
       </nav>
     </div>

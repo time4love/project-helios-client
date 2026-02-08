@@ -39,6 +39,11 @@ export function SolarTracker() {
   const [isSunFilterActive, setIsSunFilterActive] = useState(false)
 
   // Camera exposure controls
+  interface ExposureRange {
+    min: number
+    max: number
+    step: number
+  }
   interface CameraControls {
     setExposure: (level: number) => Promise<boolean>
     resetExposure: () => Promise<boolean>
@@ -46,8 +51,8 @@ export function SolarTracker() {
     isDarkened: boolean
   }
   const cameraControlsRef = useRef<CameraControls | null>(null)
-  const [isCameraDarkened, setIsCameraDarkened] = useState(false)
-  const [exposureSupported, setExposureSupported] = useState<boolean | null>(null) // null = unknown
+  const [exposureValue, setExposureValue] = useState(0) // Current exposure level
+  const [exposureRange, setExposureRange] = useState<ExposureRange | null>(null) // null = not supported or unknown
 
   // Normalize raw sensor data to astronomical coordinates
   const normalizedSensor = useMemo(() => {
@@ -230,39 +235,32 @@ export function SolarTracker() {
   // Handle camera controls from CameraBackground
   const handleCameraControlsReady = useCallback((controls: CameraControls) => {
     cameraControlsRef.current = controls
-    setIsCameraDarkened(controls.isDarkened)
 
-    // Check if exposure is supported
+    // Check if exposure is supported and get range
     const capabilities = controls.getExposureCapabilities()
-    setExposureSupported(capabilities?.supported ?? false)
+    if (capabilities?.supported) {
+      setExposureRange({
+        min: capabilities.min,
+        max: capabilities.max,
+        step: capabilities.step,
+      })
+    } else {
+      setExposureRange(null)
+    }
   }, [])
 
-  // Toggle camera darkening for sun viewing
-  const handleToggleDarken = async () => {
+  // Handle exposure slider change
+  const handleExposureChange = async (value: number) => {
     const controls = cameraControlsRef.current
     if (!controls) return
 
-    if (isCameraDarkened) {
-      // Reset to normal
-      const success = await controls.resetExposure()
-      if (success) {
-        setIsCameraDarkened(false)
-      }
-    } else {
-      // Darken to minimum exposure
-      const capabilities = controls.getExposureCapabilities()
-      if (!capabilities?.supported) {
-        setError('Camera exposure control not supported. Try using sunglasses over the lens.')
-        return
-      }
+    setExposureValue(value)
 
-      // Use minimum exposure (most negative value)
-      const success = await controls.setExposure(capabilities.min)
-      if (success) {
-        setIsCameraDarkened(true)
-      } else {
-        setError('Failed to adjust camera exposure.')
-      }
+    if (value === 0) {
+      // Reset to auto when at neutral
+      await controls.resetExposure()
+    } else {
+      await controls.setExposure(value)
     }
   }
 
@@ -307,27 +305,59 @@ export function SolarTracker() {
         </span>
       </button>
 
-      {/* Camera Darken Button - top right corner */}
-      {exposureSupported !== null && (
-        <button
-          onClick={handleToggleDarken}
-          className={`
-            absolute top-4 right-4 z-30 flex items-center gap-2 px-3 py-2 rounded-full
-            backdrop-blur-sm border transition-all cursor-pointer shadow-lg
-            ${isCameraDarkened
-              ? 'bg-amber-500/40 border-amber-400/60 text-amber-300'
-              : 'bg-black/50 border-white/20 text-white/70 hover:border-white/40'
-            }
-            ${!exposureSupported ? 'opacity-60' : ''}
-          `}
-          title={exposureSupported ? 'Reduce camera exposure for sun viewing' : 'Exposure control not supported on this device'}
-        >
-          <SunDim className={`w-4 h-4 ${isCameraDarkened ? 'animate-pulse' : ''}`} />
-          <span className="text-xs font-medium">
-            {isCameraDarkened ? 'DARKENED' : 'Darken'}
-          </span>
-        </button>
-      )}
+      {/* Camera Exposure Control - top right corner */}
+      <div className="absolute top-4 right-4 z-30">
+        {exposureRange ? (
+          // Exposure slider when supported
+          <div className="flex flex-col items-end gap-1 bg-black/60 backdrop-blur-sm border border-white/20 rounded-lg px-3 py-2 shadow-lg">
+            <div className="flex items-center gap-2">
+              <SunDim className="w-4 h-4 text-white/70" />
+              <span className="text-xs font-medium text-white/70">Exposure</span>
+              <span className={`text-xs font-mono w-12 text-right ${exposureValue < 0 ? 'text-amber-400' : exposureValue > 0 ? 'text-blue-400' : 'text-white/50'}`}>
+                {exposureValue >= 0 ? '+' : ''}{exposureValue.toFixed(1)}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={exposureRange.min}
+              max={exposureRange.max}
+              step={exposureRange.step}
+              value={exposureValue}
+              onChange={(e) => handleExposureChange(parseFloat(e.target.value))}
+              className="w-32 h-2 bg-white/20 rounded-lg appearance-none cursor-pointer
+                [&::-webkit-slider-thumb]:appearance-none
+                [&::-webkit-slider-thumb]:w-4
+                [&::-webkit-slider-thumb]:h-4
+                [&::-webkit-slider-thumb]:rounded-full
+                [&::-webkit-slider-thumb]:bg-white
+                [&::-webkit-slider-thumb]:shadow-lg
+                [&::-webkit-slider-thumb]:cursor-pointer
+                [&::-moz-range-thumb]:w-4
+                [&::-moz-range-thumb]:h-4
+                [&::-moz-range-thumb]:rounded-full
+                [&::-moz-range-thumb]:bg-white
+                [&::-moz-range-thumb]:border-0
+                [&::-moz-range-thumb]:cursor-pointer"
+              title="Drag left to darken for sun viewing"
+            />
+            <div className="flex justify-between w-full text-[10px] text-white/40 px-1">
+              <span>Dark</span>
+              <span>Bright</span>
+            </div>
+          </div>
+        ) : (
+          // Fallback tip when exposure control not supported
+          <div className="bg-black/60 backdrop-blur-sm border border-amber-400/30 rounded-lg px-3 py-2 shadow-lg max-w-[160px]">
+            <div className="flex items-center gap-2 mb-1">
+              <SunDim className="w-4 h-4 text-amber-400/70" />
+              <span className="text-xs font-medium text-amber-400/90">Sun Tip</span>
+            </div>
+            <p className="text-[10px] text-white/60 leading-tight">
+              Tap screen to focus/expose, or use sunglasses over the lens.
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Header Badge - tap 5 times to reset calibration */}
       <div className="text-center mb-4">

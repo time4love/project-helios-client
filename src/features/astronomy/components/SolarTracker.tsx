@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { Camera, MapPin, Compass, AlertCircle, X, Sun, Timer, Check, Trash2, Lightbulb, Scale, Navigation, Volume2, VolumeX } from 'lucide-react'
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
-import { fetchSunPosition, saveMeasurement, RateLimitError, type SunPosition } from '@/services/api'
+import { fetchSunPosition, saveMeasurement, RateLimitError, type SunPosition, type CollectionMethod } from '@/services/api'
 import { normalizeOrientation, getShortestAngle } from '@/utils/sensorMath'
 import { getTrueNorth } from '@/utils/magnetic'
 import { CameraBackground } from '@/features/sensor-read/components/CameraBackground'
@@ -26,6 +26,7 @@ interface PendingMeasurement {
   latitude: number
   longitude: number
   timestamp: Date
+  collectionMethod: CollectionMethod
 }
 
 type ViewMode = 'SHADOW' | 'CAMERA'
@@ -317,6 +318,7 @@ export function SolarTracker() {
       return
     }
 
+    // Capture viewMode at the moment of measurement (not at submit time)
     const pending: PendingMeasurement = {
       deviceAzimuth: correctedSensor.azimuth,
       deviceAltitude: correctedSensor.altitude,
@@ -327,6 +329,7 @@ export function SolarTracker() {
       latitude: coordinates.latitude,
       longitude: coordinates.longitude,
       timestamp: new Date(),
+      collectionMethod: viewMode,
     }
 
     setPendingMeasurement(pending)
@@ -364,7 +367,8 @@ export function SolarTracker() {
         pendingMeasurement.deviceAzimuth,
         pendingMeasurement.deviceAltitude,
         pendingMeasurement.magneticAzimuth,
-        pendingMeasurement.magneticDeclination
+        pendingMeasurement.magneticDeclination,
+        pendingMeasurement.collectionMethod
       )
 
       setSnapshot({
@@ -484,6 +488,7 @@ export function SolarTracker() {
         isOpen={showLevelCalibration}
         onClose={() => setShowLevelCalibration(false)}
         onCalibrated={() => window.location.reload()}
+        sensorData={sensorData}
       />
 
       {/* Countdown UI */}
@@ -743,12 +748,12 @@ export function SolarTracker() {
             )}
 
             {/* Big Azimuth & Altitude Display */}
-            <div className="text-center mb-6 backdrop-blur-md rounded-2xl px-8 py-6 shadow-xl border bg-black/60 border-white/10">
-              <div className="grid grid-cols-2 gap-12">
+            <div className="text-center mb-6 backdrop-blur-md rounded-2xl px-4 sm:px-8 py-6 shadow-xl border bg-black/60 border-white/10 max-w-sm mx-auto">
+              <div className="grid grid-cols-2 gap-4 sm:gap-8">
                 <div>
                   <p className="text-white/60 text-sm mb-2">AZIMUTH</p>
                   <p
-                    className="text-6xl font-mono font-bold text-white drop-shadow-lg"
+                    className="text-4xl sm:text-5xl font-mono font-bold text-white drop-shadow-lg"
                     style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
                   >
                     {correctedSensor ? formatValue(correctedSensor.azimuth) : '—'}
@@ -757,7 +762,7 @@ export function SolarTracker() {
                 <div>
                   <p className="text-white/60 text-sm mb-2">ALTITUDE</p>
                   <p
-                    className="text-6xl font-mono font-bold text-white drop-shadow-lg"
+                    className="text-4xl sm:text-5xl font-mono font-bold text-white drop-shadow-lg"
                     style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
                   >
                     {correctedSensor ? formatValue(correctedSensor.altitude) : '—'}

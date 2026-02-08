@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { Scale, Check, X } from 'lucide-react'
-import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
+import type { SensorData } from '@/types/sensors'
 
 const STORAGE_KEY = 'helios_level_calibration'
 
@@ -46,14 +46,15 @@ interface LevelCalibrationProps {
   isOpen: boolean
   onClose: () => void
   onCalibrated?: () => void
+  /** Sensor data from parent - avoids duplicate hook instance */
+  sensorData: SensorData | null
 }
 
 /**
  * Full-screen overlay for calibrating the phone's level position.
  * Captures beta/gamma offsets when phone is placed on a flat surface.
  */
-export function LevelCalibration({ isOpen, onClose, onCalibrated }: LevelCalibrationProps) {
-  const { data: sensorData, permissionGranted } = useDeviceOrientation()
+export function LevelCalibration({ isOpen, onClose, onCalibrated, sensorData }: LevelCalibrationProps) {
   const [isCalibrating, setIsCalibrating] = useState(false)
   const [calibrationSuccess, setCalibrationSuccess] = useState(false)
 
@@ -122,7 +123,7 @@ export function LevelCalibration({ isOpen, onClose, onCalibrated }: LevelCalibra
             </div>
 
             {/* Live Sensor Preview */}
-            {permissionGranted && sensorData && (
+            {sensorData && (
               <div className="bg-black/40 rounded-xl p-4 mb-6">
                 <p className="text-white/40 text-xs text-center mb-3">CURRENT SENSOR VALUES</p>
                 <div className="grid grid-cols-2 gap-4 text-center">
@@ -148,10 +149,10 @@ export function LevelCalibration({ isOpen, onClose, onCalibrated }: LevelCalibra
             {/* Calibrate Button */}
             <button
               onClick={handleCalibrate}
-              disabled={!permissionGranted || !sensorData || isCalibrating}
+              disabled={!sensorData || isCalibrating}
               className={`
                 w-full py-4 rounded-xl font-semibold text-lg transition-all
-                ${permissionGranted && sensorData && !isCalibrating
+                ${sensorData && !isCalibrating
                   ? 'bg-blue-500 hover:bg-blue-400 text-white cursor-pointer'
                   : 'bg-slate-700 text-white/50 cursor-not-allowed'
                 }
@@ -162,8 +163,8 @@ export function LevelCalibration({ isOpen, onClose, onCalibrated }: LevelCalibra
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   Calibrating...
                 </span>
-              ) : !permissionGranted ? (
-                'Enable sensors first'
+              ) : !sensorData ? (
+                'Waiting for sensor data...'
               ) : (
                 'Set as Level Reference'
               )}

@@ -23,6 +23,8 @@ export interface SunPosition {
   altitude: number
 }
 
+export type CollectionMethod = 'SHADOW' | 'CAMERA'
+
 export interface MeasurementResult {
   id: number
   created_at: string
@@ -37,6 +39,7 @@ export interface MeasurementResult {
   delta_altitude: number
   magnetic_azimuth: number | null
   magnetic_declination: number | null
+  collection_method: CollectionMethod | null
   flat_earth_sun_height_km: number | null
 }
 
@@ -77,7 +80,8 @@ export async function saveMeasurement(
   deviceAzimuth: number,
   deviceAltitude: number,
   magneticAzimuth?: number,
-  magneticDeclination?: number
+  magneticDeclination?: number,
+  collectionMethod?: CollectionMethod
 ): Promise<MeasurementResult> {
   try {
     const response = await api.post<MeasurementResult>('/api/v1/solar/measure', {
@@ -88,6 +92,7 @@ export async function saveMeasurement(
       device_id: getDeviceId(),
       magnetic_azimuth: magneticAzimuth,
       magnetic_declination: magneticDeclination,
+      collection_method: collectionMethod,
     })
 
     return response.data

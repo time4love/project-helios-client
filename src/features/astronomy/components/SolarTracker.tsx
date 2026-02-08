@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
-import { Camera, MapPin, Compass, AlertCircle, X, Sun, Glasses } from 'lucide-react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { Camera, MapPin, Compass, AlertCircle, X, Sun, Glasses, Timer } from 'lucide-react'
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
 import { fetchSunPosition, saveMeasurement, RateLimitError, type SunPosition } from '@/services/api'
@@ -37,6 +37,43 @@ export function SolarTracker() {
 
   // Sun mode for glare reduction (visual overlay only)
   const [isSunModeActive, setIsSunModeActive] = useState(false)
+
+  // Self-timer for shake-free capture
+  const [isTimerEnabled, setIsTimerEnabled] = useState(false)
+  const [countdown, setCountdown] = useState<number | null>(null)
+
+  // Audio context for countdown beeps (initialized on first user interaction)
+  const audioContextRef = useRef<AudioContext | null>(null)
+
+  // Initialize AudioContext on first user interaction (browser policy)
+  const initAudioContext = useCallback(() => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+    }
+    return audioContextRef.current
+  }, [])
+
+  // Play a beep sound using Web Audio API
+  const playBeep = useCallback((frequency: number, duration: number) => {
+    const ctx = audioContextRef.current
+    if (!ctx) return
+
+    const oscillator = ctx.createOscillator()
+    const gainNode = ctx.createGain()
+
+    oscillator.connect(gainNode)
+    gainNode.connect(ctx.destination)
+
+    oscillator.frequency.value = frequency
+    oscillator.type = 'sine'
+
+    // Fade out to avoid click
+    gainNode.gain.setValueAtTime(0.3, ctx.currentTime)
+    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration / 1000)
+
+    oscillator.start(ctx.currentTime)
+    oscillator.stop(ctx.currentTime + duration / 1000)
+  }, [])
 
   // Normalize raw sensor data to astronomical coordinates
   const normalizedSensor = useMemo(() => {
@@ -197,6 +234,51 @@ export function SolarTracker() {
 
   const dismissError = () => setError(null)
 
+  // Handle capture button click - either immediate or start countdown
+  const handleCaptureClick = () => {
+    // Initialize audio on user gesture (browser policy)
+    initAudioContext()
+
+    if (countdown !== null) {
+      // Cancel ongoing countdown
+      setCountdown(null)
+      return
+    }
+
+    if (isTimerEnabled) {
+      // Start 5-second countdown
+      setCountdown(5)
+    } else {
+      // Immediate capture
+      handleMeasure()
+    }
+  }
+
+  // Countdown timer effect with audio cues
+  useEffect(() => {
+    if (countdown === null) return
+
+    // Play audio cues
+    if (countdown <= 3 && countdown > 0) {
+      // High-pitched beep for 3, 2, 1
+      playBeep(880, 100)
+    } else if (countdown === 0) {
+      // Lower, longer "shutter" sound for capture
+      playBeep(440, 300)
+      // Timer finished - take the shot
+      handleMeasure()
+      setCountdown(null)
+      return
+    }
+
+    // Decrement every second
+    const timer = setTimeout(() => {
+      setCountdown((prev) => (prev !== null ? prev - 1 : null))
+    }, 1000)
+
+    return () => clearTimeout(timer)
+  }, [countdown, playBeep])
+
   // Hidden dev feature: tap header 5 times within 2 seconds to reset calibration
   const handleHeaderTap = () => {
     const now = Date.now()
@@ -237,6 +319,30 @@ export function SolarTracker() {
             <span className="text-amber-200 text-sm font-medium">Place sunglasses over camera lens</span>
           </div>
         </div>
+      )}
+
+      {/* Countdown UI - top center number + border flash (doesn't block view) */}
+      {countdown !== null && (
+        <>
+          {/* Flashing red border around screen */}
+          <div
+            className="fixed inset-0 z-[55] pointer-events-none border-4 border-red-500 animate-pulse"
+            style={{
+              boxShadow: 'inset 0 0 30px rgba(239, 68, 68, 0.4)',
+            }}
+          />
+          {/* Countdown number at top center */}
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] pointer-events-none">
+            <span
+              className="text-5xl font-bold text-red-500 drop-shadow-lg animate-pulse"
+              style={{
+                textShadow: '0 0 20px rgba(239, 68, 68, 0.6), 0 2px 10px rgba(0,0,0,0.8)',
+              }}
+            >
+              {countdown}
+            </span>
+          </div>
+        </>
       )}
 
       {/* Sun Mode Toggle Button - top left corner */}
@@ -388,35 +494,63 @@ export function SolarTracker() {
         {/* Guidance HUD */}
         {guidance && <GuidanceHUD guidance={guidance} isNightMode={!!isNightMode} isSunMode={isSunModeActive} />}
 
-        {/* Capture Button - Always enabled when sensors ready, with inviting pulse */}
-        {/* When sun mode is active, use high-contrast cyan color for visibility */}
-        <button
-          onClick={handleMeasure}
-          disabled={!canCapture || isCapturing}
-          className={`
-            w-20 h-20 rounded-full border-4 flex items-center justify-center
-            transition-all duration-200 cursor-pointer
-            ${
-              canCapture && !isCapturing
-                ? isSunModeActive
-                  ? 'bg-cyan-500 border-cyan-300 hover:bg-cyan-400 hover:scale-105 active:scale-95 shadow-lg shadow-cyan-500/50 animate-pulse'
-                  : guidance?.fullyLocked
-                    ? 'bg-green-500 border-green-300 hover:bg-green-400 hover:scale-105 active:scale-95 shadow-lg shadow-green-500/30 animate-pulse'
-                    : 'bg-blue-500 border-blue-300 hover:bg-blue-400 hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/30 animate-[pulse_2s_ease-in-out_infinite]'
-                : 'bg-slate-700 border-slate-600 cursor-not-allowed opacity-50'
-            }
-          `}
-        >
-          {isCapturing ? (
-            <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <Camera className={`w-8 h-8 ${isSunModeActive ? 'text-black' : 'text-white'}`} />
-          )}
-        </button>
+        {/* Capture Controls - Timer toggle + Capture button */}
+        <div className="flex items-center gap-3">
+          {/* Timer Toggle Button */}
+          <button
+            onClick={() => setIsTimerEnabled((prev) => !prev)}
+            disabled={countdown !== null}
+            className={`
+              w-12 h-12 rounded-full border-2 flex flex-col items-center justify-center
+              transition-all duration-200 cursor-pointer
+              ${isTimerEnabled
+                ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-500/40'
+                : 'bg-black/50 border-white/30 text-white/70 hover:border-white/50'
+              }
+              ${countdown !== null ? 'opacity-50 cursor-not-allowed' : ''}
+            `}
+            title={isTimerEnabled ? 'Timer enabled (5s)' : 'Enable 5s timer'}
+          >
+            <Timer className="w-5 h-5" />
+            <span className="text-[10px] font-bold">5s</span>
+          </button>
+
+          {/* Main Capture Button */}
+          <button
+            onClick={handleCaptureClick}
+            disabled={!canCapture || isCapturing}
+            className={`
+              w-20 h-20 rounded-full border-4 flex items-center justify-center
+              transition-all duration-200 cursor-pointer
+              ${
+                countdown !== null
+                  ? 'bg-red-500 border-red-300 hover:bg-red-400 shadow-lg shadow-red-500/50'
+                  : canCapture && !isCapturing
+                    ? isSunModeActive
+                      ? 'bg-cyan-500 border-cyan-300 hover:bg-cyan-400 hover:scale-105 active:scale-95 shadow-lg shadow-cyan-500/50 animate-pulse'
+                      : guidance?.fullyLocked
+                        ? 'bg-green-500 border-green-300 hover:bg-green-400 hover:scale-105 active:scale-95 shadow-lg shadow-green-500/30 animate-pulse'
+                        : 'bg-blue-500 border-blue-300 hover:bg-blue-400 hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/30 animate-[pulse_2s_ease-in-out_infinite]'
+                    : 'bg-slate-700 border-slate-600 cursor-not-allowed opacity-50'
+              }
+            `}
+          >
+            {isCapturing ? (
+              <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : countdown !== null ? (
+              <X className="w-8 h-8 text-white" />
+            ) : (
+              <Camera className={`w-8 h-8 ${isSunModeActive ? 'text-black' : 'text-white'}`} />
+            )}
+          </button>
+        </div>
+
         <p className="text-white/70 text-sm mt-2 drop-shadow-md" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>
-          {!coordinates
-            ? 'Waiting for GPS...'
-            : !permissionGranted
+          {countdown !== null
+            ? 'Tap to cancel'
+            : !coordinates
+              ? 'Waiting for GPS...'
+              : !permissionGranted
               ? 'Enable sensors first'
               : 'Tap to capture measurement'}
         </p>

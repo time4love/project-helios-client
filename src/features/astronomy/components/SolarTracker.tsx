@@ -223,28 +223,20 @@ export function SolarTracker() {
 
       {/* Sun Mode Overlay - "Sniper Scope" effect with very dark edges */}
       {isSunModeActive && (
-        <>
+        <div className="fixed inset-0 z-10 pointer-events-none">
           {/* Dark overlay with tiny peephole */}
           <div
-            className="fixed inset-0 pointer-events-none z-10"
+            className="absolute inset-0"
             style={{
-              background: `radial-gradient(
-                circle at center,
-                transparent 0%,
-                transparent 6%,
-                rgba(255, 0, 0, 0.5) 6%,
-                rgba(255, 0, 0, 0.5) 8%,
-                rgba(0, 0, 0, 0.98) 8%,
-                rgba(0, 0, 0, 1) 100%
-              )`,
+              background: 'radial-gradient(circle at 50% 50%, transparent 6%, rgba(255, 0, 0, 0.5) 6%, rgba(255, 0, 0, 0.5) 8%, rgba(0, 0, 0, 0.98) 8%, black 100%)',
             }}
           />
           {/* Sunglasses instruction - bottom of screen */}
-          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 bg-amber-900/80 backdrop-blur-sm border border-amber-400/50 rounded-full shadow-lg">
+          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-2 px-4 py-2 bg-amber-900/90 backdrop-blur-sm border border-amber-400/50 rounded-full shadow-lg">
             <Glasses className="w-5 h-5 text-amber-300" />
             <span className="text-amber-200 text-sm font-medium">Place sunglasses over camera lens</span>
           </div>
-        </>
+        </div>
       )}
 
       {/* Sun Mode Toggle Button - top left corner */}

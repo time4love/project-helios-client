@@ -88,7 +88,7 @@ export function GuidanceHUD({
   const getArrowColor = () => isSunMode ? 'text-red-500' : 'text-orange-400'
 
   return (
-    <div className="flex flex-col items-center my-6 z-20 relative">
+    <div className="flex flex-col items-center my-6">
       {/* Night Mode Warning Badge */}
       {isNightMode && (
         <div className="mb-3 px-3 py-1.5 bg-indigo-900/70 backdrop-blur-sm border border-indigo-400/40 rounded-full flex items-center gap-2">

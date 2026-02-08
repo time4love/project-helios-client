@@ -345,11 +345,11 @@ export function SolarTracker() {
         </>
       )}
 
-      {/* Sun Mode Toggle Button - top left corner */}
+      {/* Sun Mode Toggle Button - top left corner (fixed positioning for proper z-index) */}
       <button
         onClick={() => setIsSunModeActive((prev) => !prev)}
         className={`
-          absolute top-4 left-4 z-50 flex items-center gap-2 px-3 py-2 rounded-full
+          fixed top-4 left-4 z-[100] flex items-center gap-2 px-3 py-2 rounded-full
           backdrop-blur-sm border transition-all cursor-pointer shadow-lg
           ${isSunModeActive
             ? 'bg-amber-500/50 border-amber-400/70 text-amber-200'

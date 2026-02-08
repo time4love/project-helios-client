@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
-import { Camera, MapPin, Compass, AlertCircle, X, Sun } from 'lucide-react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { Camera, MapPin, Compass, AlertCircle, X, Sun, SunDim } from 'lucide-react'
 import { useDeviceOrientation } from '@/hooks/useDeviceOrientation'
 import { useGeoLocation } from '@/hooks/useGeoLocation'
 import { fetchSunPosition, saveMeasurement, RateLimitError, type SunPosition } from '@/services/api'
@@ -37,6 +37,17 @@ export function SolarTracker() {
 
   // Sun filter for glare reduction
   const [isSunFilterActive, setIsSunFilterActive] = useState(false)
+
+  // Camera exposure controls
+  interface CameraControls {
+    setExposure: (level: number) => Promise<boolean>
+    resetExposure: () => Promise<boolean>
+    getExposureCapabilities: () => { supported: boolean; min: number; max: number; step: number } | null
+    isDarkened: boolean
+  }
+  const cameraControlsRef = useRef<CameraControls | null>(null)
+  const [isCameraDarkened, setIsCameraDarkened] = useState(false)
+  const [exposureSupported, setExposureSupported] = useState<boolean | null>(null) // null = unknown
 
   // Normalize raw sensor data to astronomical coordinates
   const normalizedSensor = useMemo(() => {
@@ -216,38 +227,107 @@ export function SolarTracker() {
     }
   }
 
+  // Handle camera controls from CameraBackground
+  const handleCameraControlsReady = useCallback((controls: CameraControls) => {
+    cameraControlsRef.current = controls
+    setIsCameraDarkened(controls.isDarkened)
+
+    // Check if exposure is supported
+    const capabilities = controls.getExposureCapabilities()
+    setExposureSupported(capabilities?.supported ?? false)
+  }, [])
+
+  // Toggle camera darkening for sun viewing
+  const handleToggleDarken = async () => {
+    const controls = cameraControlsRef.current
+    if (!controls) return
+
+    if (isCameraDarkened) {
+      // Reset to normal
+      const success = await controls.resetExposure()
+      if (success) {
+        setIsCameraDarkened(false)
+      }
+    } else {
+      // Darken to minimum exposure
+      const capabilities = controls.getExposureCapabilities()
+      if (!capabilities?.supported) {
+        setError('Camera exposure control not supported. Try using sunglasses over the lens.')
+        return
+      }
+
+      // Use minimum exposure (most negative value)
+      const success = await controls.setExposure(capabilities.min)
+      if (success) {
+        setIsCameraDarkened(true)
+      } else {
+        setError('Failed to adjust camera exposure.')
+      }
+    }
+  }
+
   return (
     <div className="w-full min-h-screen p-4 flex flex-col relative">
       {/* AR Camera Background */}
-      <CameraBackground />
+      <CameraBackground onControlsReady={handleCameraControlsReady} />
 
-      {/* Sun Filter Overlay - tunnel vision effect */}
+      {/* Sun Mode Overlay - "Sniper Scope" effect */}
       {isSunFilterActive && (
         <div
           className="fixed inset-0 pointer-events-none z-10"
           style={{
-            background: 'radial-gradient(circle at center, transparent 20%, rgba(0,0,0,0.7) 50%, rgba(0,0,0,0.95) 100%)',
+            background: `radial-gradient(
+              circle at center,
+              transparent 0%,
+              transparent 10%,
+              rgba(255, 0, 0, 0.4) 10%,
+              rgba(255, 0, 0, 0.4) 15%,
+              rgba(0, 0, 0, 0.95) 15%,
+              rgba(0, 0, 0, 0.98) 100%
+            )`,
           }}
         />
       )}
 
-      {/* Sun Filter Toggle Button - top left corner */}
+      {/* Sun Mode Toggle Button - top left corner */}
       <button
         onClick={() => setIsSunFilterActive((prev) => !prev)}
         className={`
-          absolute top-4 left-4 z-20 flex items-center gap-2 px-3 py-2 rounded-full
+          absolute top-4 left-4 z-30 flex items-center gap-2 px-3 py-2 rounded-full
           backdrop-blur-sm border transition-all cursor-pointer shadow-lg
           ${isSunFilterActive
-            ? 'bg-amber-500/30 border-amber-400/50 text-amber-300'
+            ? 'bg-cyan-500/40 border-cyan-400/60 text-cyan-300'
             : 'bg-black/50 border-white/20 text-white/70 hover:border-white/40'
           }
         `}
       >
         <Sun className={`w-4 h-4 ${isSunFilterActive ? 'animate-pulse' : ''}`} />
         <span className="text-xs font-medium">
-          {isSunFilterActive ? 'Filter ON' : 'Sun Filter'}
+          {isSunFilterActive ? 'SUN MODE' : 'Sun Mode'}
         </span>
       </button>
+
+      {/* Camera Darken Button - top right corner */}
+      {exposureSupported !== null && (
+        <button
+          onClick={handleToggleDarken}
+          className={`
+            absolute top-4 right-4 z-30 flex items-center gap-2 px-3 py-2 rounded-full
+            backdrop-blur-sm border transition-all cursor-pointer shadow-lg
+            ${isCameraDarkened
+              ? 'bg-amber-500/40 border-amber-400/60 text-amber-300'
+              : 'bg-black/50 border-white/20 text-white/70 hover:border-white/40'
+            }
+            ${!exposureSupported ? 'opacity-60' : ''}
+          `}
+          title={exposureSupported ? 'Reduce camera exposure for sun viewing' : 'Exposure control not supported on this device'}
+        >
+          <SunDim className={`w-4 h-4 ${isCameraDarkened ? 'animate-pulse' : ''}`} />
+          <span className="text-xs font-medium">
+            {isCameraDarkened ? 'DARKENED' : 'Darken'}
+          </span>
+        </button>
+      )}
 
       {/* Header Badge - tap 5 times to reset calibration */}
       <div className="text-center mb-4">
@@ -300,24 +380,40 @@ export function SolarTracker() {
 
       {/* Live Sensor Feed */}
       <div className="flex-1 flex flex-col items-center justify-center">
-        <div className="text-center mb-4 bg-black/50 backdrop-blur-md rounded-2xl px-6 py-4 shadow-xl border border-white/10">
-          <span className="inline-block px-3 py-1 bg-green-500/30 border border-green-400/40 rounded-full text-green-400 text-xs font-semibold tracking-wider mb-4">
+        <div className={`
+          text-center mb-4 backdrop-blur-md rounded-2xl px-6 py-4 shadow-xl border z-20 relative
+          ${isSunFilterActive
+            ? 'bg-black/90 border-cyan-400/30'
+            : 'bg-black/50 border-white/10'
+          }
+        `}>
+          <span className={`
+            inline-block px-3 py-1 rounded-full text-xs font-semibold tracking-wider mb-4 border
+            ${isSunFilterActive
+              ? 'bg-cyan-500/30 border-cyan-400/40 text-cyan-400'
+              : 'bg-green-500/30 border-green-400/40 text-green-400'
+            }
+          `}>
             LIVE SENSOR
           </span>
           <div className="grid grid-cols-2 gap-8">
             <div>
-              <p className="text-white/60 text-sm mb-1">AZIMUTH (TRUE N)</p>
+              <p className={`text-sm mb-1 ${isSunFilterActive ? 'text-cyan-300/80' : 'text-white/60'}`}>
+                AZIMUTH (TRUE N)
+              </p>
               <p
-                className="text-4xl font-mono font-bold text-white drop-shadow-lg"
+                className={`text-4xl font-mono font-bold drop-shadow-lg ${isSunFilterActive ? 'text-cyan-400' : 'text-white'}`}
                 style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
               >
                 {correctedSensor ? formatValue(correctedSensor.azimuth) : '—'}
               </p>
             </div>
             <div>
-              <p className="text-white/60 text-sm mb-1">ALTITUDE</p>
+              <p className={`text-sm mb-1 ${isSunFilterActive ? 'text-cyan-300/80' : 'text-white/60'}`}>
+                ALTITUDE
+              </p>
               <p
-                className="text-4xl font-mono font-bold text-white drop-shadow-lg"
+                className={`text-4xl font-mono font-bold drop-shadow-lg ${isSunFilterActive ? 'text-cyan-400' : 'text-white'}`}
                 style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}
               >
                 {correctedSensor ? formatValue(correctedSensor.altitude) : '—'}
@@ -325,29 +421,44 @@ export function SolarTracker() {
             </div>
           </div>
           {magneticCorrection && (
-            <p className="text-amber-400/80 text-xs mt-2 font-mono">
+            <p className={`text-xs mt-2 font-mono ${isSunFilterActive ? 'text-lime-400/80' : 'text-amber-400/80'}`}>
               Magnetic Declination: {magneticCorrection.declination >= 0 ? '+' : ''}
               {magneticCorrection.declination.toFixed(1)}°
             </p>
           )}
-          <p className="text-white/40 text-xs mt-1">(Assumes Portrait Mode)</p>
+          <p className={`text-xs mt-1 ${isSunFilterActive ? 'text-cyan-300/40' : 'text-white/40'}`}>
+            (Assumes Portrait Mode)
+          </p>
         </div>
 
         {/* Target Info */}
         {targetPosition && (
-          <div className="text-center mb-2 bg-black/40 backdrop-blur-sm rounded-xl px-4 py-2 border border-white/10">
-            <span className="inline-block px-3 py-1 bg-blue-500/30 border border-blue-400/40 rounded-full text-blue-300 text-xs font-semibold tracking-wider mb-2">
+          <div className={`
+            text-center mb-2 backdrop-blur-sm rounded-xl px-4 py-2 border z-20 relative
+            ${isSunFilterActive ? 'bg-black/90 border-lime-400/30' : 'bg-black/40 border-white/10'}
+          `}>
+            <span className={`
+              inline-block px-3 py-1 rounded-full text-xs font-semibold tracking-wider mb-2 border
+              ${isSunFilterActive
+                ? 'bg-lime-500/30 border-lime-400/40 text-lime-300'
+                : 'bg-blue-500/30 border-blue-400/40 text-blue-300'
+              }
+            `}>
               TARGET (SUN)
             </span>
             <div className="flex gap-6 text-sm">
-              <span className="text-blue-200 font-mono drop-shadow-md">Az: {formatValue(targetPosition.azimuth)}</span>
-              <span className="text-blue-200 font-mono drop-shadow-md">Alt: {formatValue(targetPosition.altitude)}</span>
+              <span className={`font-mono drop-shadow-md ${isSunFilterActive ? 'text-lime-300' : 'text-blue-200'}`}>
+                Az: {formatValue(targetPosition.azimuth)}
+              </span>
+              <span className={`font-mono drop-shadow-md ${isSunFilterActive ? 'text-lime-300' : 'text-blue-200'}`}>
+                Alt: {formatValue(targetPosition.altitude)}
+              </span>
             </div>
           </div>
         )}
 
         {/* Guidance HUD */}
-        {guidance && <GuidanceHUD guidance={guidance} isNightMode={!!isNightMode} />}
+        {guidance && <GuidanceHUD guidance={guidance} isNightMode={!!isNightMode} isSunMode={isSunFilterActive} />}
 
         {/* Capture Button - Always enabled when sensors ready, with inviting pulse */}
         {/* When sun filter is active, use high-contrast cyan color for visibility */}

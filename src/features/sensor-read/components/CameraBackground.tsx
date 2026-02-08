@@ -1,13 +1,33 @@
 import { useEffect, useRef } from 'react'
 import { useCameraStream } from '@/hooks/useCameraStream'
 
+interface ExposureCapabilities {
+  supported: boolean
+  min: number
+  max: number
+  step: number
+}
+
+interface CameraControls {
+  setExposure: (level: number) => Promise<boolean>
+  resetExposure: () => Promise<boolean>
+  getExposureCapabilities: () => ExposureCapabilities | null
+  isDarkened: boolean
+}
+
+interface CameraBackgroundProps {
+  onControlsReady?: (controls: CameraControls) => void
+}
+
 /**
  * Full-screen camera background for AR experience.
  * Falls back to a dark background if camera access is denied or unavailable.
+ * Optionally exposes camera controls (exposure, white balance) to parent.
  */
-export function CameraBackground() {
-  const { stream, error } = useCameraStream()
+export function CameraBackground({ onControlsReady }: CameraBackgroundProps) {
+  const { stream, error, setExposure, resetExposure, getExposureCapabilities, isDarkened } = useCameraStream()
   const videoRef = useRef<HTMLVideoElement>(null)
+  const controlsReportedRef = useRef(false)
 
   // Attach stream to video element when available
   useEffect(() => {
@@ -15,6 +35,31 @@ export function CameraBackground() {
       videoRef.current.srcObject = stream
     }
   }, [stream])
+
+  // Report camera controls to parent when stream is ready
+  useEffect(() => {
+    if (stream && onControlsReady && !controlsReportedRef.current) {
+      controlsReportedRef.current = true
+      onControlsReady({
+        setExposure,
+        resetExposure,
+        getExposureCapabilities,
+        isDarkened,
+      })
+    }
+  }, [stream, onControlsReady, setExposure, resetExposure, getExposureCapabilities, isDarkened])
+
+  // Update parent when isDarkened changes
+  useEffect(() => {
+    if (stream && onControlsReady && controlsReportedRef.current) {
+      onControlsReady({
+        setExposure,
+        resetExposure,
+        getExposureCapabilities,
+        isDarkened,
+      })
+    }
+  }, [isDarkened, stream, onControlsReady, setExposure, resetExposure, getExposureCapabilities])
 
   // Fallback: dark background if camera unavailable
   if (error || !stream) {

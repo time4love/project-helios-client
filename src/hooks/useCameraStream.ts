@@ -1,8 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
+interface ExposureCapabilities {
+  supported: boolean
+  min: number
+  max: number
+  step: number
+}
+
 interface CameraStreamState {
   stream: MediaStream | null
   error: string | null
+  setExposure: (level: number) => Promise<boolean>
+  resetExposure: () => Promise<boolean>
+  getExposureCapabilities: () => ExposureCapabilities | null
+  isDarkened: boolean
 }
 
 /**
@@ -14,6 +25,7 @@ interface CameraStreamState {
 export function useCameraStream(): CameraStreamState {
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isDarkened, setIsDarkened] = useState(false)
   const streamRef = useRef<MediaStream | null>(null)
   const mountedRef = useRef(true)
 
@@ -104,5 +116,131 @@ export function useCameraStream(): CameraStreamState {
     }
   }, [initCamera])
 
-  return { stream, error }
+  // Get exposure capabilities from the active video track
+  const getExposureCapabilities = useCallback((): ExposureCapabilities | null => {
+    const currentStream = streamRef.current
+    if (!currentStream) return null
+
+    const track = currentStream.getVideoTracks()[0]
+    if (!track) return null
+
+    try {
+      // TypeScript doesn't have full types for ImageCapture API capabilities
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const capabilities = track.getCapabilities() as any
+
+      if (capabilities.exposureCompensation) {
+        return {
+          supported: true,
+          min: capabilities.exposureCompensation.min ?? -2,
+          max: capabilities.exposureCompensation.max ?? 2,
+          step: capabilities.exposureCompensation.step ?? 0.1,
+        }
+      }
+
+      return { supported: false, min: 0, max: 0, step: 0 }
+    } catch {
+      return { supported: false, min: 0, max: 0, step: 0 }
+    }
+  }, [])
+
+  // Set camera exposure level
+  // level: typically -2 (dark) to +2 (bright), we want negative for sun viewing
+  const setExposure = useCallback(async (level: number): Promise<boolean> => {
+    const currentStream = streamRef.current
+    if (!currentStream) return false
+
+    const track = currentStream.getVideoTracks()[0]
+    if (!track) return false
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const capabilities = track.getCapabilities() as any
+
+      // Check if exposure compensation is supported
+      if (!capabilities.exposureCompensation) {
+        console.warn('Exposure compensation not supported on this device')
+        return false
+      }
+
+      // Clamp level to supported range
+      const minExposure = capabilities.exposureCompensation.min ?? -2
+      const maxExposure = capabilities.exposureCompensation.max ?? 2
+      const clampedLevel = Math.max(minExposure, Math.min(maxExposure, level))
+
+      // Build constraints - also lock white balance if supported
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const advancedConstraints: any = {
+        exposureCompensation: clampedLevel,
+      }
+
+      // Lock exposure mode to manual if supported
+      if (capabilities.exposureMode?.includes('manual')) {
+        advancedConstraints.exposureMode = 'manual'
+      }
+
+      // Lock white balance to prevent camera from fighting back
+      if (capabilities.whiteBalanceMode?.includes('manual')) {
+        advancedConstraints.whiteBalanceMode = 'manual'
+      }
+
+      await track.applyConstraints({
+        advanced: [advancedConstraints],
+      })
+
+      setIsDarkened(level < 0)
+      console.log(`Exposure set to ${clampedLevel}`, advancedConstraints)
+      return true
+    } catch (err) {
+      console.error('Failed to set exposure:', err)
+      return false
+    }
+  }, [])
+
+  // Reset exposure to default (auto)
+  const resetExposure = useCallback(async (): Promise<boolean> => {
+    const currentStream = streamRef.current
+    if (!currentStream) return false
+
+    const track = currentStream.getVideoTracks()[0]
+    if (!track) return false
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const capabilities = track.getCapabilities() as any
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const advancedConstraints: any = {}
+
+      // Reset to auto exposure if supported
+      if (capabilities.exposureMode?.includes('continuous')) {
+        advancedConstraints.exposureMode = 'continuous'
+      }
+
+      // Reset exposure compensation to 0 (neutral)
+      if (capabilities.exposureCompensation) {
+        advancedConstraints.exposureCompensation = 0
+      }
+
+      // Reset white balance to auto
+      if (capabilities.whiteBalanceMode?.includes('continuous')) {
+        advancedConstraints.whiteBalanceMode = 'continuous'
+      }
+
+      if (Object.keys(advancedConstraints).length > 0) {
+        await track.applyConstraints({
+          advanced: [advancedConstraints],
+        })
+      }
+
+      setIsDarkened(false)
+      console.log('Exposure reset to auto')
+      return true
+    } catch (err) {
+      console.error('Failed to reset exposure:', err)
+      return false
+    }
+  }, [])
+
+  return { stream, error, setExposure, resetExposure, getExposureCapabilities, isDarkened }
 }

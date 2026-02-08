@@ -1,10 +1,24 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { SolarTracker } from '@/features/astronomy/components/SolarTracker'
-import { GlobalMap } from '@/features/astronomy/components/GlobalMap'
 import { StatsDashboard } from '@/features/astronomy/components/StatsDashboard'
 import { CalibrationWizard } from '@/features/sensor-read/components/CalibrationWizard'
+import { Loader2 } from 'lucide-react'
+
+// Lazy load GlobalMap to prevent Leaflet from blocking the main thread on initial load
+const GlobalMap = lazy(() => import('@/features/astronomy/components/GlobalMap').then(m => ({ default: m.GlobalMap })))
 
 type AppMode = 'measure' | 'map' | 'stats'
+
+// Loading fallback for lazy-loaded components
+function MapLoadingFallback() {
+  return (
+    <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900">
+      <Loader2 className="w-12 h-12 text-amber-500 animate-spin mb-4" />
+      <p className="text-white/70 text-lg">Loading Map...</p>
+      <p className="text-white/40 text-sm mt-2">Initializing Leaflet</p>
+    </div>
+  )
+}
 
 function App() {
   const [mode, setMode] = useState<AppMode>('measure')
@@ -16,7 +30,11 @@ function App() {
 
       {/* Main content */}
       {mode === 'measure' && <SolarTracker />}
-      {mode === 'map' && <GlobalMap />}
+      {mode === 'map' && (
+        <Suspense fallback={<MapLoadingFallback />}>
+          <GlobalMap />
+        </Suspense>
+      )}
       {mode === 'stats' && <StatsDashboard />}
 
       {/* Navigation toggle */}

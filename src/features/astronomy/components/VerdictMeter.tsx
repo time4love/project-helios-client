@@ -1,5 +1,42 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { getLatestVerdict, type VerdictResult } from '@/services/api'
+
+/**
+ * Format timestamp to DD/MM/YYYY HH:mm
+ */
+function formatTimestamp(isoString: string): string {
+  const date = new Date(isoString)
+  const day = String(date.getDate()).padStart(2, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const year = date.getFullYear()
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${day}/${month}/${year} ${hours}:${minutes}`
+}
+
+/**
+ * Calculate "time ago" string from ISO timestamp
+ */
+function getTimeAgo(isoString: string): string {
+  const now = new Date()
+  const then = new Date(isoString)
+  const diffMs = now.getTime() - then.getTime()
+  const diffSeconds = Math.floor(diffMs / 1000)
+  const diffMinutes = Math.floor(diffSeconds / 60)
+  const diffHours = Math.floor(diffMinutes / 60)
+  const diffDays = Math.floor(diffHours / 24)
+
+  if (diffDays > 0) {
+    return diffDays === 1 ? '1 day ago' : `${diffDays} days ago`
+  }
+  if (diffHours > 0) {
+    return diffHours === 1 ? '1 hour ago' : `${diffHours} hours ago`
+  }
+  if (diffMinutes > 0) {
+    return diffMinutes === 1 ? '1 minute ago' : `${diffMinutes} minutes ago`
+  }
+  return 'Just now'
+}
 
 /**
  * VerdictMeter - A semicircular gauge showing Earth model confidence score.
@@ -11,26 +48,40 @@ import { getLatestVerdict, type VerdictResult } from '@/services/api'
 export function VerdictMeter() {
   const [verdict, setVerdict] = useState<VerdictResult | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    async function loadVerdict() {
-      try {
-        const data = await getLatestVerdict()
-        setVerdict(data)
-      } catch (err) {
-        // 404 is expected if no verdicts exist yet
-        if (err instanceof Error && err.message.includes('404')) {
-          setError('No verdict data yet')
-        } else {
-          setError('Failed to load verdict')
-        }
-      } finally {
-        setLoading(false)
-      }
+  const loadVerdict = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true)
+    } else {
+      setLoading(true)
     }
-    loadVerdict()
+    setError(null)
+
+    try {
+      const data = await getLatestVerdict()
+      setVerdict(data)
+    } catch (err) {
+      // 404 is expected if no verdicts exist yet
+      if (err instanceof Error && err.message.includes('404')) {
+        setError('No verdict data yet')
+      } else {
+        setError('Failed to load verdict')
+      }
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
   }, [])
+
+  useEffect(() => {
+    loadVerdict()
+  }, [loadVerdict])
+
+  const handleRefresh = () => {
+    loadVerdict(true)
+  }
 
   if (loading) {
     return (
@@ -224,11 +275,39 @@ export function VerdictMeter() {
 
       {/* Footer */}
       <div className="mt-4 pt-4 border-t border-slate-700">
-        <p className="text-slate-500 text-xs font-mono text-center">
-          Based on {verdict.valid_samples.toLocaleString()} validated samples (last 24h)
-          {' '}&#x2022;{' '}
-          Updated: {new Date(verdict.created_at).toLocaleString()}
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-slate-500 text-xs font-mono">
+            Based on {verdict.valid_samples.toLocaleString()} validated samples (last 24h)
+          </p>
+
+          <div className="flex items-center gap-3">
+            <p className="text-slate-400 text-xs font-mono">
+              Last Calculation: {formatTimestamp(verdict.created_at)}
+              <span className="text-slate-500 ml-2">({getTimeAgo(verdict.created_at)})</span>
+            </p>
+
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Refresh verdict"
+            >
+              <svg
+                className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
